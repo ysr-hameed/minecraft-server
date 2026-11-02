@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<h1 style="font-family:'Space Grotesk'">Live Console & Logs 📜</h1><p class="sub">Status: {% if running %}🟢 Running{% else %}🔴 Stopped{% endif %} • Logs auto-refresh</p>
+<div class="logbox" id="logs">{% for l in logs %}{{l}}<br>{% endfor %}</div>
+<form method="POST" style="display:flex;gap:8px;margin-top:12px"><input class="input" name="command" placeholder="Type command: say Hello, gamemode creative SlyxUp, time set day, op Player..." style="margin:0"><button class="btn btn-green">Execute ▶</button></form>
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="kbd">say Hi</span><span class="kbd">time set day</span><span class="kbd">weather clear</span><span class="kbd">gamemode creative @a</span><span class="kbd">give @p diamond 64</span></div>
+<script>setInterval(async()=>{let r=await fetch('/api/logs');let d=await r.json();document.getElementById('logs').innerHTML=d.logs.slice(-300).join('<br>');},3000)</script>
+{% endblock %}

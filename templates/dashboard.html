@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block content %}
+<h1 style="font-family:'Space Grotesk';font-size:32px">Server Dashboard 🚀</h1><p class="sub">Paper {{version}} • {{server_type|upper}} • Optimised for low RAM • Termux & Oracle ready</p>
+<div class="grid" style="margin-top:16px">
+<div class="card"><h3>Status</h3><div class="big">{% if stats.running %}🟢 ONLINE{% else %}🔴 OFFLINE{% endif %}</div><div class="sub">Type: {{stats.type}} • v{{stats.version}}</div></div>
+<div class="card"><h3>CPU Load</h3><div class="big" id="cpu">{{stats.cpu}}%</div><div class="sub">Server Proc: {{stats.proc_cpu}}% • {{stats.proc_mem_mb}} MB</div></div>
+<div class="card"><h3>RAM Usage</h3><div class="big" id="ram">{{stats.ram_used}} / {{stats.ram_total}} MB</div><div class="sub">{{stats.ram_percent}}% used • Disk {{stats.disk_used}} / {{stats.disk_total}} GB</div></div>
+<div class="card"><h3>Players Online</h3><div class="big" id="online">{{stats.player_count}} / {{props.get('max-players','20')}}</div><div class="sub">{{stats.players_online|join(', ') or 'No one online'}}</div></div>
+</div>
+<div class="two" style="margin-top:16px">
+<div class="card">
+<h3>⚡ Quick Controls — No World Loss</h3>
+<p class="sub">Stop/Restart keeps world data in minecraft_server/. Backups auto-created daily.</p>
+<form method="POST" action="/server/start" style="display:inline"><button class="btn btn-green">▶ Start</button></form>
+<form method="POST" action="/server/stop" style="display:inline"><button class="btn btn-red">■ Stop</button></form>
+<form method="POST" action="/server/restart" style="display:inline"><button class="btn btn-violet">↻ Restart</button></form>
+<a href="/console" class="btn btn-ghost">Console →</a>
+<div style="margin-top:16px;background:#020617;padding:14px;border-radius:14px"><b>🔌 Connect in Minecraft</b><br><br>
+<b>Java PC (1.21):</b> Multiplayer → Add Server → Address: <span class="kbd">{{host_ip}}:25565</span><br><br>
+<b>Bedrock Mobile:</b> Play → Servers → Add Server → Name: SlyxCraft • Address: <span class="kbd">{{host_ip}}</span> • Port: <span class="kbd">19132</span><br><br>
+<span class="sub">Oracle Cloud: Use your Public IP. Open 25565 TCP + 19132 UDP in Security List. On Termux/local: use localhost or Wi-Fi IP.</span>
+</div>
+</div>
+<div class="card"><h3>💾 Recent Backups</h3>{% for b in backups %}<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span style="font-size:13px">{{b.name}}</span><span class="sub">{{b.size_mb}} MB</span></div>{% else %}<p class="sub">No backups yet. Create one in Worlds.</p>{% endfor %}<a href="/worlds" class="btn btn-ghost" style="margin-top:12px">Manage Backups →</a>
+<h3 style="margin-top:18px">📋 Server Info</h3><p style="font-size:13px;line-height:1.8">MOTD: {{props.get('motd')}}<br>Gamemode: {{props.get('gamemode')}} • Difficulty: {{props.get('difficulty')}}<br>Level: {{props.get('level-name')}} • Seed: {{props.get('level-seed') or 'Random'}}</p></div>
+</div>
+{% endblock %}

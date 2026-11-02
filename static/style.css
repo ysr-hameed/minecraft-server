@@ -1,0 +1,23 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Inter:wght@400;600;700&display=swap');
+body{background:#0a0f1e;color:#f1f5f9;font-family:'Inter',sans-serif;margin:0}
+.top{background:rgba(10,15,30,.95);padding:14px 20px;display:flex;justify-content:space-between;border-bottom:1px solid #1e293b;position:sticky;top:0}
+.logo{font-family:'Space Grotesk';font-weight:700;font-size:22px}.logo span{color:#22c55e}
+.nav{display:flex;gap:6px;flex-wrap:wrap}.nav a{padding:8px 12px;border-radius:999px;color:#94a3b8;font-size:13px;font-weight:600;text-decoration:none}.nav a.active,.nav a:hover{background:#1a2233;color:#fff}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 16px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+.card{background:linear-gradient(180deg,#131c2e,#0f172a);border:1px solid #1e293b;border-radius:20px;padding:18px}
+.card h3{font-size:12px;text-transform:uppercase;color:#94a3b8}
+.big{font-size:30px;font-weight:800;font-family:'Space Grotesk'}
+.sub{font-size:13px;color:#94a3b8}
+.btn{padding:10px 16px;border-radius:999px;border:0;font-weight:700;cursor:pointer}
+.btn-green{background:#22c55e}.btn-red{background:#ef4444;color:#fff}.btn-ghost{background:#1e293b;color:#fff}.btn-violet{background:#a78bfa}
+.input,.select{width:100%;padding:11px;border-radius:12px;background:#0f172a;border:1px solid #1e293b;color:#fff;margin:6px 0}
+.table{width:100%;border-collapse:collapse}.table th{color:#94a3b8;text-align:left;padding:10px}.table td{padding:12px 10px;border-top:1px solid #1e293b}
+.logbox{background:#020617;border:1px solid #1e293b;border-radius:16px;padding:14px;height:380px;overflow:auto;font-family:monospace;font-size:12px}
+.flash{background:#fef3c7;color:#92400e;padding:10px;border-radius:12px;margin:10px 0}
+.two{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+.kbd{background:#1e293b;padding:2px 6px;border-radius:6px}
+.login{max-width:420px;margin:60px auto}
