@@ -1,251 +1,472 @@
+from __future__ import annotations
 
-import os, json, zipfile, shutil, pathlib
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file, flash
+import atexit
+import hmac
+import os
+import posixpath
+import time
+from functools import wraps
+from pathlib import Path
+
 from dotenv import load_dotenv
-load_dotenv()
-from mc_core import manager, SERVER_DIR, BACKUP_DIR, UPLOAD_DIR, BASE_DIR
-# psutil removed for Termux
+
+load_dotenv(Path(__file__).resolve().with_name(".env"))
+
+from flask import (
+    Flask,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+    url_for,
+)
+from werkzeug.utils import secure_filename
+
+from mc_core import SERVER_DIR, UPLOAD_DIR, get_lan_ip, manager
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY","slyxpanel-secret-2026")
-app.config['MAX_CONTENT_LENGTH'] = 1024*1024*1024  # 1GB upload
+app.secret_key = os.getenv("SECRET_KEY", "slyxpanel-bedrock-secret")
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MC_MAX_UPLOAD_MB", "1024")) * 1024 * 1024
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-ADMIN_PASSWORD = os.getenv("MC_PANEL_PASSWORD","admin123")
+ADMIN_PASSWORD = os.getenv("MC_PANEL_PASSWORD", "admin123")
+FIELD_GROUPS = [
+    (
+        "Network",
+        [
+            ("server-port", "Server port (UDP)", "number"),
+            ("server-portv6", "IPv6 port (UDP)", "number"),
+            ("enable-ipv6", "Enable IPv6", "bool"),
+            ("server-ip", "Bind IPv4 address", "text"),
+            ("server-ipv6", "Bind IPv6 address", "text"),
+            ("enable-query", "Enable query", "bool"),
+            ("query.port", "Query port", "number"),
+        ],
+    ),
+    (
+        "Server",
+        [
+            ("motd", "Server name / MOTD", "text"),
+            ("max-players", "Max players", "number"),
+            ("white-list", "Whitelist enabled", "bool"),
+            ("xbox-auth", "Xbox Live authentication", "bool"),
+            ("language", "Language", "text"),
+        ],
+    ),
+    (
+        "Gameplay",
+        [
+            ("gamemode", "Default game mode", "gamemode"),
+            ("difficulty", "Difficulty", "difficulty"),
+            ("force-gamemode", "Force game mode", "bool"),
+            ("hardcore", "Hardcore", "bool"),
+            ("pvp", "PvP", "bool"),
+            ("level-name", "Active world", "text"),
+            ("level-seed", "World seed", "text"),
+            ("level-type", "World type", "leveltype"),
+            ("view-distance", "View distance", "number"),
+            ("auto-save", "Auto save", "bool"),
+        ],
+    ),
+]
+GROUPED_KEYS = {key for _, fields in FIELD_GROUPS for key, _, _ in fields}
 
-def login_required(f):
-    from functools import wraps
-    @wraps(f)
-    def wrap(*a, **kw):
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
-            return redirect(url_for("login"))
-        return f(*a, **kw)
-    return wrap
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
 
-@app.route("/login", methods=["GET","POST"])
+    return wrapped
+
+
+def flash_result(result, success_text: str | None = None) -> None:
+    ok, message = result
+    flash(success_text or message if ok else message, "success" if ok else "error")
+
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method=="POST":
-        pw=request.form.get("password","")
-        if pw==ADMIN_PASSWORD:
-            session["logged_in"]=True
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if hmac.compare_digest(password, ADMIN_PASSWORD):
+            session.clear()
+            session["logged_in"] = True
+            session.permanent = True
+            target = request.args.get("next", "")
+            if target.startswith("/") and not target.startswith("//"):
+                return redirect(target)
             return redirect(url_for("dashboard"))
-        flash("Wrong password")
+        flash("Wrong password", "error")
     return render_template("login.html")
+
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 @app.route("/")
 @login_required
 def dashboard():
-    stats=manager.status()
-    props=manager.get_properties()
-    backups=manager.list_backups()[:5]
-    # public IP guess
-    host_ip=request.host.split(":")[0]
-    return render_template("dashboard.html", stats=stats, props=props, backups=backups, host_ip=host_ip, server_type=manager.server_type, version=manager.version)
+    stats = manager.status()
+    properties = manager.get_properties()
+    backups = manager.list_backups()[:5]
+    runtime = manager.runtime_status()
+    host_ip = request.host.split(":")[0]
+    lan_ip = get_lan_ip()
+    hosts = []
+    for host in (lan_ip, host_ip, "127.0.0.1"):
+        if host and host not in hosts:
+            hosts.append(host)
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        props=properties,
+        backups=backups,
+        runtime=runtime,
+        hosts=hosts,
+        server_type=manager.server_type,
+        version=manager.version,
+    )
+
 
 @app.route("/api/stats")
 @login_required
 def api_stats():
     return jsonify(manager.status())
 
-# Console
-@app.route("/console", methods=["GET","POST"])
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok", "server": manager.server_type})
+
+
+@app.route("/console", methods=["GET", "POST"])
 @login_required
 def console():
-    if request.method=="POST":
-        cmd=request.form.get("command","").strip()
-        if cmd:
-            manager.send_command(cmd)
+    if request.method == "POST":
+        command = request.form.get("command", "")
+        flash_result(manager.send_command(command))
         return redirect(url_for("console"))
-    logs=manager.log_lines[-300:]
-    return render_template("console.html", logs=logs, running=manager.status()["running"])
+    status = manager.status()
+    return render_template(
+        "console.html",
+        logs=manager.logs_snapshot(300),
+        running=status["running"],
+        status=status,
+        stats=status,
+    )
+
 
 @app.route("/api/logs")
 @login_required
 def api_logs():
-    return jsonify({"logs": manager.log_lines[-300:], "running": manager.status()["running"]})
+    status = manager.status()
+    return jsonify(
+        {
+            "logs": manager.logs_snapshot(300),
+            "running": status["running"],
+            "player_count": status["player_count"],
+            "players": status["players_online"],
+            "version": status["version"],
+            "port": status["port"],
+            "uptime": status["uptime"],
+        }
+    )
+
 
 @app.route("/server/<action>", methods=["POST"])
 @login_required
 def server_action(action):
-    if action=="start":
-        ok,msg=manager.start()
-    elif action=="stop":
-        ok,msg=manager.stop()
-    elif action=="restart":
-        ok,msg=manager.restart()
+    actions = {
+        "start": manager.start,
+        "stop": manager.stop,
+        "restart": manager.restart,
+    }
+    handler = actions.get(action)
+    if not handler:
+        flash("Unknown server action", "error")
     else:
-        ok,msg=False,"Unknown"
-    flash(msg)
-    return redirect(url_for("dashboard"))
+        flash_result(handler())
+    return redirect(request.referrer or url_for("dashboard"))
 
-# Worlds
-@app.route("/worlds", methods=["GET","POST"])
+
+@app.route("/server/download-pocketmine", methods=["POST"])
+@login_required
+def download_pocketmine():
+    flash_result(manager.ensure_pocketmine(force=True))
+    return redirect(request.referrer or url_for("settings"))
+
+
+@app.route("/worlds", methods=["GET", "POST"])
 @login_required
 def worlds():
-    if request.method=="POST":
-        action=request.form.get("action")
-        if action=="create":
-            name=request.form.get("name","world2").strip()
-            seed=request.form.get("seed","")
-            gm=request.form.get("gamemode","survival")
-            diff=request.form.get("difficulty","normal")
-            manager.create_world(name, seed, gm, diff)
-            flash(f"World '{name}' set as active. Restart server to generate.")
-        elif action=="backup":
-            fname=manager.create_backup("manual")
-            flash(f"Backup created: {fname}")
-        elif action=="restore":
-            fname=request.form.get("backup")
-            # restore logic
-            path=BACKUP_DIR/fname
-            if path.exists():
-                # unzip to server dir
-                with zipfile.ZipFile(path) as z: z.extractall(SERVER_DIR)
-                flash(f"Restored {fname}")
-        elif action=="delete_backup":
-            fname=request.form.get("backup")
-            (BACKUP_DIR/fname).unlink(missing_ok=True)
-            flash("Backup deleted")
-    worlds_list=manager.list_worlds()
-    backups=manager.list_backups()
-    return render_template("worlds.html", worlds=worlds_list, backups=backups)
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "create":
+            result = manager.create_world(
+                request.form.get("name", ""),
+                request.form.get("seed", ""),
+                request.form.get("gamemode", "survival"),
+                request.form.get("difficulty", "normal"),
+                request.form.get("level_type", "DEFAULT"),
+            )
+            flash_result(result)
+        elif action == "backup":
+            ok, message = manager.create_backup("manual")
+            flash(f"Backup created: {message}" if ok else message, "success" if ok else "error")
+        elif action == "restore":
+            flash_result(manager.restore_backup(request.form.get("backup", "")))
+        elif action == "delete_backup":
+            flash_result(manager.delete_backup(request.form.get("backup", "")))
+        elif action == "delete_world":
+            flash_result(manager.delete_world(request.form.get("world", "")))
+        elif action == "activate_world":
+            flash_result(manager.activate_world(request.form.get("world", "")))
+        else:
+            flash("Unknown world action", "error")
+        return redirect(url_for("worlds"))
+    return render_template(
+        "worlds.html",
+        worlds=manager.list_worlds(),
+        backups=manager.list_backups(),
+    )
+
 
 @app.route("/world/upload", methods=["POST"])
 @login_required
 def upload_world():
-    f=request.files.get("world_zip")
-    if f and f.filename.endswith(".zip"):
-        path=UPLOAD_DIR/f.filename
-        f.save(path)
-        # unzip to server dir as new world folder
-        world_name=request.form.get("world_name") or pathlib.Path(f.filename).stem
-        target=SERVER_DIR/world_name
-        if target.exists(): shutil.rmtree(target)
-        with zipfile.ZipFile(path) as z: z.extractall(target)
-        flash(f"World uploaded: {world_name}")
+    uploaded = request.files.get("world_zip")
+    if not uploaded or not uploaded.filename:
+        flash("Choose a .zip world file", "error")
+        return redirect(url_for("worlds"))
+    original = Path(uploaded.filename).name
+    if not original.lower().endswith(".zip"):
+        flash("World uploads must be .zip files", "error")
+        return redirect(url_for("worlds"))
+    world_name = request.form.get("world_name", "").strip() or Path(original).stem
+    replace = request.form.get("replace") == "on"
+    temporary = UPLOAD_DIR / f"world_upload_{int(time.time())}_{secure_filename(original) or 'world.zip'}"
+    try:
+        uploaded.save(temporary)
+        flash_result(manager.install_world_zip(temporary, world_name, replace))
+    finally:
+        temporary.unlink(missing_ok=True)
     return redirect(url_for("worlds"))
+
 
 @app.route("/world/download/<name>")
 @login_required
 def download_world(name):
-    world_path=SERVER_DIR/name
-    if not world_path.exists():
-        return "Not found",404
-    tmp=BASE_DIR/f"temp_{name}.zip"
-    with zipfile.ZipFile(tmp,"w",zipfile.ZIP_DEFLATED) as z:
-        for p in world_path.rglob("*"):
-            if p.is_file():
-                z.write(p, p.relative_to(world_path))
-    return send_file(tmp, as_attachment=True, download_name=f"{name}.zip")
+    archive = manager.create_world_zip(name)
+    if not archive:
+        flash("World not found", "error")
+        return redirect(url_for("worlds"))
+
+    response = send_file(archive, as_attachment=True, download_name=f"{name}.zip")
+    response.call_on_close(lambda: archive.unlink(missing_ok=True))
+    return response
+
 
 @app.route("/backup/download/<name>")
 @login_required
 def download_backup(name):
-    path=BACKUP_DIR/name
-    if not path.exists(): return "Not found",404
-    return send_file(path, as_attachment=True)
+    path = manager.backup_path(name)
+    if not path:
+        flash("Backup not found", "error")
+        return redirect(url_for("backups_page"))
+    return send_file(path, as_attachment=True, download_name=path.name)
 
-# Players
-@app.route("/players", methods=["GET","POST"])
+
+@app.route("/players", methods=["GET", "POST"])
 @login_required
 def players():
-    if request.method=="POST":
-        name=request.form.get("player","").strip()
-        action=request.form.get("action")
-        if name and action:
-            manager.player_action(name, action)
-            flash(f"{action} -> {name}")
-    q=request.args.get("q","").lower()
-    flt=request.args.get("filter","all")
-    allp=manager.get_players()
-    if q: allp=[p for p in allp if q in p["name"].lower()]
-    if flt=="op": allp=[p for p in allp if p.get("op")]
-    if flt=="banned": allp=[p for p in allp if p.get("banned")]
-    if flt=="whitelisted": allp=[p for p in allp if p.get("whitelisted")]
-    return render_template("players.html", players=allp, q=q, filter=flt)
+    if request.method == "POST":
+        flash_result(
+            manager.player_action(
+                request.form.get("player", ""),
+                request.form.get("action", ""),
+            )
+        )
+        return redirect(url_for("players"))
+    query = request.args.get("q", "").strip().lower()
+    selected_filter = request.args.get("filter", "all")
+    all_players = manager.get_players()
+    if query:
+        all_players = [player for player in all_players if query in player["name"].lower()]
+    if selected_filter == "op":
+        all_players = [player for player in all_players if player["op"]]
+    elif selected_filter == "banned":
+        all_players = [player for player in all_players if player["banned"]]
+    elif selected_filter == "whitelisted":
+        all_players = [player for player in all_players if player["whitelisted"]]
+    elif selected_filter == "online":
+        all_players = [player for player in all_players if player["online"]]
+    status = manager.status()
+    return render_template(
+        "players.html",
+        players=all_players,
+        query=query,
+        selected_filter=selected_filter,
+        online_count=status["player_count"],
+    )
 
-# Settings
-@app.route("/settings", methods=["GET","POST"])
+
+@app.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
-    if request.method=="POST":
-        data={k:v for k,v in request.form.items() if k not in ["version","server_type"]}
-        # props
-        props={k:v for k,v in data.items()}
-        manager.save_properties(props)
-        if "version" in request.form:
-            manager.version=request.form["version"]
-            manager.server_type=request.form.get("server_type","java")
-            # try download new version
-            manager.download_java_server()
-        flash("Settings saved. Restart to apply version/world changes.")
+    if request.method == "POST":
+        updates = {}
+        for key, value in request.form.items():
+            if key.startswith("prop__"):
+                updates[key[6:]] = value
+        numeric_limits = {
+            "server-port": (1, 65535),
+            "server-portv6": (1, 65535),
+            "query.port": (1, 65535),
+            "rcon.port": (1, 65535),
+            "max-players": (1, 500),
+            "view-distance": (4, 32),
+        }
+        for key, (minimum, maximum) in numeric_limits.items():
+            if key not in updates:
+                continue
+            try:
+                number = int(updates[key])
+            except (TypeError, ValueError):
+                flash(f"{key} must be a number", "error")
+                return redirect(url_for("settings"))
+            if not minimum <= number <= maximum:
+                flash(f"{key} must be between {minimum} and {maximum}", "error")
+                return redirect(url_for("settings"))
+            updates[key] = str(number)
+        if "motd" in updates:
+            updates["motd"] = updates["motd"].strip()[:128] or "SlyxCraft Bedrock Server"
+        if not updates:
+            flash("No settings supplied", "error")
+            return redirect(url_for("settings"))
+        flash_result(manager.save_properties(updates))
         return redirect(url_for("settings"))
-    props=manager.get_properties()
-    return render_template("settings.html", props=props, version=manager.version, server_type=manager.server_type)
+    properties = manager.get_properties()
+    extra_properties = {key: value for key, value in properties.items() if key not in GROUPED_KEYS}
+    return render_template(
+        "settings.html",
+        props=properties,
+        field_groups=FIELD_GROUPS,
+        extra_properties=extra_properties,
+        runtime=manager.runtime_status(),
+        server_dir=str(SERVER_DIR),
+    )
 
-# Files
+
 @app.route("/files")
 @login_required
 def files():
-    rel=request.args.get("path","")
-    items, cur = manager.list_files(rel)
-    content=""
-    edit_path=request.args.get("edit","")
+    relative = request.args.get("path", "")
+    edit_path = request.args.get("edit", "")
+    try:
+        items, current = manager.list_files(relative)
+    except (OSError, ValueError) as error:
+        flash(f"Cannot open folder: {error}", "error")
+        return redirect(url_for("files"))
+    content = ""
     if edit_path:
-        fp=SERVER_DIR/edit_path
-        if fp.exists() and fp.is_file() and fp.stat().st_size<500000:
-            try: content=fp.read_text(errors="ignore")
-            except: content=""
-    return render_template("files.html", items=items, cur=cur, edit_path=edit_path, content=content)
+        ok, content = manager.read_file(edit_path)
+        if not ok:
+            flash(content, "error")
+            content = ""
+            edit_path = ""
+    parent = posixpath.dirname(current)
+    return render_template(
+        "files.html",
+        items=items,
+        current=current,
+        parent=parent,
+        edit_path=edit_path,
+        content=content,
+    )
+
 
 @app.route("/files/save", methods=["POST"])
 @login_required
 def files_save():
-    rel=request.form.get("path","")
-    content=request.form.get("content","")
-    fp=(SERVER_DIR/rel).resolve()
-    if str(fp).startswith(str(SERVER_DIR.resolve())):
-        fp.write_text(content)
-        flash(f"Saved {rel}")
-    return redirect(url_for("files", edit=rel))
+    relative = request.form.get("path", "")
+    flash_result(manager.write_file(relative, request.form.get("content", "")))
+    return redirect(url_for("files", path=posixpath.dirname(relative), edit=relative))
+
 
 @app.route("/files/upload", methods=["POST"])
 @login_required
 def files_upload():
-    f=request.files.get("file")
-    rel=request.form.get("path","")
-    if f:
-        (SERVER_DIR/rel/f.filename).write_bytes(f.read())
-        flash(f"Uploaded {f.filename}")
-    return redirect(url_for("files", path=rel))
+    uploaded = request.files.get("file")
+    directory = request.form.get("path", "")
+    if not uploaded or not uploaded.filename:
+        flash("Choose a file to upload", "error")
+        return redirect(url_for("files", path=directory))
+    temporary = UPLOAD_DIR / f"file_upload_{int(time.time())}_{secure_filename(uploaded.filename) or 'upload.bin'}"
+    try:
+        uploaded.save(temporary)
+        flash_result(manager.save_uploaded_file(directory, uploaded.filename, temporary))
+    finally:
+        temporary.unlink(missing_ok=True)
+    return redirect(url_for("files", path=directory))
+
 
 @app.route("/files/delete", methods=["POST"])
 @login_required
 def files_delete():
-    rel=request.form.get("path","")
-    target=SERVER_DIR/rel
-    if target.exists():
-        if target.is_dir(): shutil.rmtree(target)
-        else: target.unlink()
-        flash(f"Deleted {rel}")
-    return redirect(url_for("files"))
+    relative = request.form.get("path", "")
+    parent = posixpath.dirname(relative)
+    flash_result(manager.delete_path(relative))
+    return redirect(url_for("files", path=parent))
 
-# Backups page separate also reuses worlds
+
+@app.route("/files/download")
+@login_required
+def files_download():
+    relative = request.args.get("path", "")
+    path = manager.download_path(relative)
+    if not path:
+        flash("File not found", "error")
+        return redirect(url_for("files", path=posixpath.dirname(relative)))
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
 @app.route("/backups")
 @login_required
 def backups_page():
-    return render_template("backups.html", backups=manager.list_backups())
+    return render_template(
+        "backups.html",
+        backups=manager.list_backups(),
+        backup_hour=os.getenv("BACKUP_HOUR", "3"),
+    )
+
 
 @app.route("/api/host")
 @login_required
 def api_host():
-    return jsonify({"host": request.host})
+    return jsonify({"host": request.host.split(":")[0], "lan": get_lan_ip()})
 
-if __name__=="__main__":
+
+@app.errorhandler(413)
+def too_large(_error):
+    flash("Upload is larger than the configured limit", "error")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+if __name__ == "__main__":
+    atexit.register(manager.stop)
+    host = os.getenv("MC_PANEL_HOST", "0.0.0.0")
+    port = int(os.getenv("MC_PANEL_PORT", "5000"))
     print(f"Panel password: {ADMIN_PASSWORD}")
-    print("Open http://0.0.0.0:5000 - Java 25565, Bedrock 19132 UDP")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    print(f"Server directory: {SERVER_DIR}")
+    print(f"Open http://localhost:{port} and connect from Minecraft Bedrock on UDP 19132")
+    app.run(host=host, port=port, debug=False, threaded=True, use_reloader=False)

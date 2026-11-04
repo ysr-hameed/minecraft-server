@@ -1,5 +1,124 @@
-{% extends "base.html" %}{% block content %}
-<h1>Settings & Version ⚙️</h1>
-<form method="POST"><div class="card" style="margin-top:12px"><h3>Version & Type</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><label class="sub">Server Type</label><select class="select" name="server_type"><option value="java" {% if server_type=='java' %}selected{% endif %}>Java (Paper - PC)</option><option value="bedrock" {% if server_type=='bedrock' %}selected{% endif %}>Bedrock (Mobile)</option></select></div><div><label class="sub">Minecraft Version</label><select class="select" name="version"><option>1.21.1</option><option>1.21</option><option>1.20.4</option><option>1.20.1</option><option>1.19.4</option></select><p class="sub">Current: {{version}}</p></div></div></div>
-<div class="card" style="margin-top:14px"><h3>server.properties — Edit Any Setting</h3>{% for k,v in props.items() %}<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center"><label style="font-size:13px">{{k}}</label><input class="input" name="{{k}}" value="{{v}}" style="margin:2px 0"></div>{% endfor %}<button class="btn btn-green" style="margin-top:14px">Save All Settings</button><p class="sub">Restart server to apply.</p></div></form>
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <span class="eyebrow">PocketMine configuration</span>
+    <h1>Server settings</h1>
+    <p class="sub">Edits <code>minecraft_server_bedrock/server.properties</code>. Restart PocketMine-MP after saving.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="{{ url_for('console') }}">Console</a>
+    <a class="btn btn-ghost" href="{{ url_for('files') }}">File manager</a>
+  </div>
+</section>
+
+<section class="settings-layout">
+  <form method="POST" class="stack">
+    {% for group_name, fields in field_groups %}
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <span class="eyebrow">{{ group_name }}</span>
+            <h2>{{ group_name }} settings</h2>
+          </div>
+        </div>
+        <div class="settings-grid">
+          {% for key, label, kind in fields %}
+            {% set value = props.get(key, '') %}
+            {% set value_lower = value | lower %}
+            <label class="field" for="prop__{{ key }}">
+              <span>{{ label }}</span>
+              {% if kind == 'bool' %}
+                <select class="select" id="prop__{{ key }}" name="prop__{{ key }}">
+                  <option value="true" {{ 'selected' if value_lower in ['true', 'on', '1', 'yes'] else '' }}>Enabled</option>
+                  <option value="false" {{ 'selected' if value_lower not in ['true', 'on', '1', 'yes'] else '' }}>Disabled</option>
+                </select>
+              {% elif kind == 'gamemode' %}
+                <select class="select" id="prop__{{ key }}" name="prop__{{ key }}">
+                  {% for option in ['survival', 'creative', 'adventure', 'spectator'] %}
+                    <option value="{{ option }}" {{ 'selected' if value_lower == option else '' }}>{{ option | capitalize }}</option>
+                  {% endfor %}
+                </select>
+              {% elif kind == 'difficulty' %}
+                <select class="select" id="prop__{{ key }}" name="prop__{{ key }}">
+                  {% for option in ['peaceful', 'easy', 'normal', 'hard'] %}
+                    <option value="{{ option }}" {{ 'selected' if value_lower == option else '' }}>{{ option | capitalize }}</option>
+                  {% endfor %}
+                </select>
+              {% elif kind == 'leveltype' %}
+                <select class="select" id="prop__{{ key }}" name="prop__{{ key }}">
+                  {% for option in ['DEFAULT', 'FLAT', 'VOID'] %}
+                    <option value="{{ option }}" {{ 'selected' if value | upper == option else '' }}>{{ option | capitalize }}</option>
+                  {% endfor %}
+                </select>
+              {% elif kind == 'number' %}
+                <input class="input" id="prop__{{ key }}" type="number" name="prop__{{ key }}" value="{{ value }}">
+              {% else %}
+                <input class="input" id="prop__{{ key }}" type="text" name="prop__{{ key }}" value="{{ value }}">
+              {% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <span class="eyebrow">Advanced</span>
+          <h2>Other server.properties values</h2>
+        </div>
+      </div>
+      <div class="settings-grid">
+        {% for key, value in extra_properties.items() %}
+          <label class="field" for="prop__{{ key }}">
+            <span>{{ key }}</span>
+            <input class="input" id="prop__{{ key }}" type="text" name="prop__{{ key }}" value="{{ value }}">
+          </label>
+        {% else %}
+          <p class="sub">No extra properties.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <div class="sticky-actions">
+      <span class="sub">Changes apply after restarting PocketMine-MP.</span>
+      <button class="btn btn-green" type="submit">Save settings</button>
+    </div>
+  </form>
+
+  <aside class="stack">
+    <article class="card">
+      <span class="eyebrow">Runtime</span>
+      <h2>Server health</h2>
+      <dl class="info-list compact">
+        <div><dt>Platform</dt><dd>{{ runtime.platform }}</dd></div>
+        <div><dt>Server folder</dt><dd class="mono">{{ server_dir }}</dd></div>
+        <div><dt>PocketMine-MP.phar</dt><dd>{{ runtime.phar_size if runtime.phar else 'not downloaded' }}</dd></div>
+        <div><dt>PHP</dt><dd class="mono">{{ runtime.php }}</dd></div>
+        <div><dt>PHP status</dt><dd><span class="badge {{ 'badge-green' if runtime.php_ready else 'badge-amber' }}">{{ 'READY' if runtime.php_ready else 'AUTO-DOWNLOAD ON START' }}</span></dd></div>
+      </dl>
+      {% if runtime.missing_extensions %}
+        <p class="sub">Missing extensions: {{ runtime.missing_extensions | join(', ') }}</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('download_pocketmine') }}">
+        <button class="btn btn-ghost btn-small btn-block" type="submit">Download / update PocketMine-MP.phar</button>
+      </form>
+      <p class="sub" style="margin-top:10px">A compatible PocketMine PHP runtime is downloaded automatically on the first server start when the system PHP lacks the required extensions.</p>
+    </article>
+
+    <article class="card muted-card">
+      <span class="eyebrow">Connection</span>
+      <h2>Bedrock defaults</h2>
+      <div class="safe-list">
+        <span>Port <code>{{ props.get('server-port', '19132') }}</code> uses UDP</span>
+        <span>IPv6 port <code>{{ props.get('server-portv6', '19133') }}</code></span>
+        <span>Query port <code>{{ props.get('query.port', '19132') }}</code></span>
+        <span>Max players <code>{{ props.get('max-players', '20') }}</code></span>
+      </div>
+      <p class="sub">If you change the Bedrock port, open the same UDP port on your router or VPS firewall.</p>
+    </article>
+  </aside>
+</section>
 {% endblock %}

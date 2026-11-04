@@ -1,6 +1,140 @@
-{% extends "base.html" %}{% block content %}
-<h1>Players 👥</h1><p class="sub">Manage whitelist, OP, ban, kick — with filter & search</p>
-<form method="GET" style="display:flex;gap:8px;margin-top:12px"><input class="input" name="q" value="{{q}}" placeholder="Search player..." style="margin:0"><select class="select" name="filter" style="margin:0;width:180px"><option value="all" {% if filter=='all' %}selected{% endif %}>All</option><option value="op" {% if filter=='op' %}selected{% endif %}>OP Only</option><option value="banned" {% if filter=='banned' %}selected{% endif %}>Banned</option><option value="whitelisted" {% if filter=='whitelisted' %}selected{% endif %}>Whitelisted</option></select><button class="btn btn-ghost">Filter</button></form>
-<div class="card" style="margin-top:14px"><h3>Add / Action Player</h3><form method="POST" style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" name="player" placeholder="Minecraft username e.g. SlyxUp" required style="flex:1;margin:0"><select class="select" name="action" style="width:180px;margin:0"><option value="whitelist_add">Whitelist Add</option><option value="whitelist_remove">Whitelist Remove</option><option value="op">Make OP</option><option value="deop">Remove OP</option><option value="ban">Ban</option><option value="pardon">Unban</option><option value="kick">Kick</option></select><button class="btn btn-green">Apply</button></form></div>
-<table class="table" style="margin-top:14px"><tr><th>Player</th><th>UUID</th><th>Whitelisted</th><th>OP</th><th>Banned</th><th>Action</th></tr>{% for p in players %}<tr><td><b>{{p.name}}</b></td><td style="font-size:12px;color:#94a3b8">{{p.uuid or '-'}}</td><td>{% if p.whitelisted %}✅{% else %}—{% endif %}</td><td>{% if p.op %}👑{% else %}—{% endif %}</td><td>{% if p.banned %}⛔{% else %}—{% endif %}</td><td><form method="POST" style="display:inline"><input type="hidden" name="player" value="{{p.name}}"><input type="hidden" name="action" value="ban"><button class="btn btn-red" style="padding:5px 10px">Ban</button></form></td></tr>{% else %}<tr><td colspan="6" style="text-align:center;color:#94a3b8">No players yet. Add one above or start server and let players join.</td></tr>{% endfor %}</table>
+{% extends "base.html" %}
+{% block title %}Players{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Access control</span>
+    <h1>Players</h1>
+    <p class="sub">PocketMine whitelist, operators, bans and kicks · {{ online_count }} online now</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="{{ url_for('console') }}">Open console</a>
+  </div>
+</section>
+
+<section class="two-col players-layout">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Action</span>
+        <h2>Manage a player</h2>
+      </div>
+    </div>
+    <form method="POST" class="form-grid two-fields">
+      <label>Player name
+        <input class="input" name="player" placeholder="Bedrock player name" required maxlength="32">
+      </label>
+      <label>Action
+        <select class="select" name="action">
+          <option value="whitelist_add">Whitelist add</option>
+          <option value="whitelist_remove">Whitelist remove</option>
+          <option value="op">Make operator</option>
+          <option value="deop">Remove operator</option>
+          <option value="ban">Ban player</option>
+          <option value="pardon">Unban player</option>
+          <option value="kick">Kick player</option>
+        </select>
+      </label>
+      <button class="btn btn-green" type="submit">Apply action</button>
+    </form>
+    <p class="sub">When the server is running, actions are sent as PocketMine commands. When it is stopped, the panel updates <code>white-list.txt</code>, <code>ops.txt</code> and <code>banned-players.txt</code> directly.</p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Find</span>
+        <h2>Search players</h2>
+      </div>
+    </div>
+    <form method="GET" class="form-grid two-fields">
+      <label>Name contains
+        <input class="input" name="q" value="{{ query }}" placeholder="Search username">
+      </label>
+      <label>Filter
+        <select class="select" name="filter">
+          <option value="all" {{ 'selected' if selected_filter == 'all' else '' }}>All players</option>
+          <option value="online" {{ 'selected' if selected_filter == 'online' else '' }}>Online now</option>
+          <option value="op" {{ 'selected' if selected_filter == 'op' else '' }}>Operators</option>
+          <option value="banned" {{ 'selected' if selected_filter == 'banned' else '' }}>Banned</option>
+          <option value="whitelisted" {{ 'selected' if selected_filter == 'whitelisted' else '' }}>Whitelisted</option>
+        </select>
+      </label>
+      <button class="btn btn-ghost" type="submit">Filter players</button>
+    </form>
+  </article>
+</section>
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <span class="eyebrow">Directory</span>
+      <h2>{{ players | length }} player records</h2>
+    </div>
+    <span class="badge badge-neutral">{{ online_count }} online</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>State</th>
+          <th>Access</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for player in players %}
+          <tr>
+            <td>
+              <div class="player-name">
+                <span class="avatar">{{ player.name[:1] | upper }}</span>
+                <div><b>{{ player.name }}</b><small>{{ 'Connected now' if player.online else 'Offline' }}</small></div>
+              </div>
+            </td>
+            <td>
+              <span class="badge {{ 'badge-green' if player.online else 'badge-neutral' }}">{{ 'ONLINE' if player.online else 'OFFLINE' }}</span>
+              {% if player.banned %}<span class="badge badge-red">BANNED</span>{% endif %}
+            </td>
+            <td>
+              <div class="badge-stack">
+                {% if player.op %}<span class="badge badge-violet">OP</span>{% endif %}
+                {% if player.whitelisted %}<span class="badge badge-green">WHITELIST</span>{% endif %}
+                {% if not player.op and not player.whitelisted and not player.banned %}<span class="sub">Standard player</span>{% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="action-row">
+                <form method="POST">
+                  <input type="hidden" name="player" value="{{ player.name }}">
+                  <input type="hidden" name="action" value="{{ 'deop' if player.op else 'op' }}">
+                  <button class="btn btn-ghost btn-tiny" type="submit">{{ 'Deop' if player.op else 'Op' }}</button>
+                </form>
+                <form method="POST">
+                  <input type="hidden" name="player" value="{{ player.name }}">
+                  <input type="hidden" name="action" value="{{ 'whitelist_remove' if player.whitelisted else 'whitelist_add' }}">
+                  <button class="btn btn-ghost btn-tiny" type="submit">{{ 'Remove WL' if player.whitelisted else 'Whitelist' }}</button>
+                </form>
+                <form method="POST">
+                  <input type="hidden" name="player" value="{{ player.name }}">
+                  <input type="hidden" name="action" value="{{ 'pardon' if player.banned else 'ban' }}">
+                  <button class="btn {{ 'btn-green' if player.banned else 'btn-red' }} btn-tiny" type="submit">{{ 'Unban' if player.banned else 'Ban' }}</button>
+                </form>
+                {% if player.online %}
+                  <form method="POST">
+                    <input type="hidden" name="player" value="{{ player.name }}">
+                    <input type="hidden" name="action" value="kick">
+                    <button class="btn btn-red btn-tiny" type="submit">Kick</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4"><div class="empty">No player records match this view. Add a player above or let someone join the server.</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
 {% endblock %}

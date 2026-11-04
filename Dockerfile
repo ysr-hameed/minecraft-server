@@ -1,20 +1,20 @@
 FROM python:3.13-slim
 
-RUN apt-get update && apt-get install -y \
-    openjdk-21-jre-headless \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
 COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install -r requirements.txt
 
 COPY . .
+RUN mkdir -p minecraft_server_bedrock/worlds backups uploads runtime
 
-ENV PYTHONUNBUFFERED=1
+EXPOSE 5000/tcp
+EXPOSE 19132/udp
+EXPOSE 19133/udp
 
-EXPOSE 5000
+VOLUME ["/app/minecraft_server_bedrock", "/app/backups"]
 
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 8 --timeout 120"]
+CMD ["python", "app.py"]

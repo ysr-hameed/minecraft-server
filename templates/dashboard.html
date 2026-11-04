@@ -1,26 +1,170 @@
-{% extends "base.html" %}{% block content %}
-<h1 style="font-family:'Space Grotesk';font-size:32px">Server Dashboard 🚀</h1><p class="sub">Paper {{version}} • {{server_type|upper}} • Optimised for low RAM • Termux & Oracle ready</p>
-<div class="grid" style="margin-top:16px">
-<div class="card"><h3>Status</h3><div class="big">{% if stats.running %}🟢 ONLINE{% else %}🔴 OFFLINE{% endif %}</div><div class="sub">Type: {{stats.type}} • v{{stats.version}}</div></div>
-<div class="card"><h3>CPU Load</h3><div class="big" id="cpu">{{stats.cpu}}%</div><div class="sub">Server Proc: {{stats.proc_cpu}}% • {{stats.proc_mem_mb}} MB</div></div>
-<div class="card"><h3>RAM Usage</h3><div class="big" id="ram">{{stats.ram_used}} / {{stats.ram_total}} MB</div><div class="sub">{{stats.ram_percent}}% used • Disk {{stats.disk_used}} / {{stats.disk_total}} GB</div></div>
-<div class="card"><h3>Players Online</h3><div class="big" id="online">{{stats.player_count}} / {{props.get('max-players','20')}}</div><div class="sub">{{stats.players_online|join(', ') or 'No one online'}}</div></div>
-</div>
-<div class="two" style="margin-top:16px">
-<div class="card">
-<h3>⚡ Quick Controls — No World Loss</h3>
-<p class="sub">Stop/Restart keeps world data in minecraft_server/. Backups auto-created daily.</p>
-<form method="POST" action="/server/start" style="display:inline"><button class="btn btn-green">▶ Start</button></form>
-<form method="POST" action="/server/stop" style="display:inline"><button class="btn btn-red">■ Stop</button></form>
-<form method="POST" action="/server/restart" style="display:inline"><button class="btn btn-violet">↻ Restart</button></form>
-<a href="/console" class="btn btn-ghost">Console →</a>
-<div style="margin-top:16px;background:#020617;padding:14px;border-radius:14px"><b>🔌 Connect in Minecraft</b><br><br>
-<b>Java PC (1.21):</b> Multiplayer → Add Server → Address: <span class="kbd">{{host_ip}}:25565</span><br><br>
-<b>Bedrock Mobile:</b> Play → Servers → Add Server → Name: SlyxCraft • Address: <span class="kbd">{{host_ip}}</span> • Port: <span class="kbd">19132</span><br><br>
-<span class="sub">Oracle Cloud: Use your Public IP. Open 25565 TCP + 19132 UDP in Security List. On Termux/local: use localhost or Wi-Fi IP.</span>
-</div>
-</div>
-<div class="card"><h3>💾 Recent Backups</h3>{% for b in backups %}<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span style="font-size:13px">{{b.name}}</span><span class="sub">{{b.size_mb}} MB</span></div>{% else %}<p class="sub">No backups yet. Create one in Worlds.</p>{% endfor %}<a href="/worlds" class="btn btn-ghost" style="margin-top:12px">Manage Backups →</a>
-<h3 style="margin-top:18px">📋 Server Info</h3><p style="font-size:13px;line-height:1.8">MOTD: {{props.get('motd')}}<br>Gamemode: {{props.get('gamemode')}} • Difficulty: {{props.get('difficulty')}}<br>Level: {{props.get('level-name')}} • Seed: {{props.get('level-seed') or 'Random'}}</p></div>
-</div>
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Bedrock control room</span>
+    <h1>Server dashboard</h1>
+    <p class="sub">PocketMine-MP {{ version if version else stats.version }} · {{ stats.platform }} · Minecraft Bedrock Mobile</p>
+  </div>
+  <div class="head-actions">
+    <span class="badge {{ 'badge-green' if stats.running else 'badge-red' }}">
+      <span class="badge-dot"></span>{{ 'ONLINE' if stats.running else 'OFFLINE' }}
+    </span>
+    <form method="POST" action="{{ url_for('server_action', action='start') }}">
+      <button class="btn btn-green" type="submit" {{ 'disabled' if stats.running else '' }}>Start</button>
+    </form>
+    <form method="POST" action="{{ url_for('server_action', action='stop') }}" onsubmit="return confirm('Stop the server safely? PocketMine will save all worlds first.');">
+      <button class="btn btn-red" type="submit" {{ 'disabled' if not stats.running else '' }}>Stop</button>
+    </form>
+    <form method="POST" action="{{ url_for('server_action', action='restart') }}" onsubmit="return confirm('Restart PocketMine-MP now?');">
+      <button class="btn btn-violet" type="submit">Restart</button>
+    </form>
+  </div>
+</section>
+
+{% if not runtime.php_ready and not runtime.download_available %}
+  <div class="notice notice-error">
+    <b>PHP runtime is not ready.</b> No compatible PocketMine PHP was found for {{ runtime.platform }}. Set <code>MC_PHP_BINARY</code> to a PocketMine-compatible PHP binary.
+  </div>
+{% elif not runtime.phar %}
+  <div class="notice">
+    <b>First start:</b> the panel will download PocketMine-MP.phar and a PocketMine-compatible PHP runtime automatically. This needs internet access once.
+  </div>
+{% endif %}
+
+<section class="stats-grid">
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Server status</span><span class="mini-icon">01</span></div>
+    <div class="stat-value">{{ 'Online' if stats.running else 'Offline' }}</div>
+    <div class="progress"><span style="width: {{ 100 if stats.running else 0 }}%"></span></div>
+    <p class="sub">PID {{ stats.pid or '—' }} · uptime {{ stats.uptime }}</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">CPU load</span><span class="mini-icon">02</span></div>
+    <div class="stat-value">{{ stats.cpu }}<small>%</small></div>
+    <div class="progress"><span style="width: {{ stats.cpu }}%"></span></div>
+    <p class="sub">Termux-safe reader · process RAM {{ stats.proc_mem_mb }} MB</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">RAM usage</span><span class="mini-icon">03</span></div>
+    <div class="stat-value">{{ stats.ram_used }}<small> / {{ stats.ram_total }} MB</small></div>
+    <div class="progress"><span style="width: {{ stats.ram_percent }}%"></span></div>
+    <p class="sub">{{ stats.ram_percent }}% memory used</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Disk usage</span><span class="mini-icon">04</span></div>
+    <div class="stat-value">{{ stats.disk_used }}<small> / {{ stats.disk_total }} GB</small></div>
+    <div class="progress"><span style="width: {{ stats.disk_percent }}%"></span></div>
+    <p class="sub">{{ stats.disk_percent }}% storage used</p>
+  </article>
+</section>
+
+<section class="stats-grid stats-grid-small">
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Players online</span><span class="mini-icon">05</span></div>
+    <div class="stat-value">{{ stats.player_count }}<small> / {{ props.get('max-players', '20') }}</small></div>
+    <p class="sub">{{ stats.players_online | join(', ') if stats.players_online else 'No players connected' }}</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Bedrock port</span><span class="mini-icon">06</span></div>
+    <div class="stat-value">{{ stats.port }}<small> UDP</small></div>
+    <p class="sub">PocketMine-MP {{ stats.version }}</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Active world</span><span class="mini-icon">07</span></div>
+    <div class="stat-value small-value">{{ props.get('level-name', 'world') }}</div>
+    <p class="sub">Seed: {{ props.get('level-seed') or 'random' }}</p>
+  </article>
+</section>
+
+<section class="two-col">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Quick start</span>
+        <h2>Connect from Bedrock Mobile</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="{{ url_for('console') }}">Open console</a>
+    </div>
+    <div class="connect-box">
+      <div class="connect-step"><span>1</span><p>Open Minecraft Bedrock → <b>Play</b> → <b>Servers</b> → <b>Add Server</b>.</p></div>
+      <div class="connect-step"><span>2</span><p>Use <b>Address</b> <code class="kbd">{{ hosts[0] }}</code> and <b>Port</b> <code class="kbd">{{ props.get('server-port', '19132') }}</code>. The port is <b>UDP</b>, not TCP.</p></div>
+      <div class="connect-step"><span>3</span><p>On the same phone use <code class="kbd">127.0.0.1</code>. On Wi-Fi use the LAN address shown above. Accept the server resource pack if prompted.</p></div>
+    </div>
+    <div class="host-chips">
+      {% for host in hosts %}
+        <span class="chip"><b>{{ host }}</b><small>:{{ props.get('server-port', '19132') }} UDP</small></span>
+      {% endfor %}
+    </div>
+    <p class="sub">This panel is Bedrock only. There is no Java server, no server.jar and no Geyser layer.</p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Runtime</span>
+        <h2>PocketMine-MP health</h2>
+      </div>
+      <span class="badge {{ 'badge-green' if runtime.php_ready and runtime.phar else 'badge-amber' }}">
+        {{ 'READY' if runtime.php_ready and runtime.phar else 'SETUP NEEDED' }}
+      </span>
+    </div>
+    <dl class="info-list">
+      <div><dt>Server folder</dt><dd class="mono">{{ runtime.server_dir }}</dd></div>
+      <div><dt>PocketMine-MP.phar</dt><dd>{{ runtime.phar_size if runtime.phar else 'not downloaded' }}</dd></div>
+      <div><dt>PHP runtime</dt><dd class="mono">{{ runtime.php }}</dd></div>
+      <div><dt>Platform</dt><dd>{{ runtime.platform }}</dd></div>
+    </dl>
+    {% if not runtime.php_ready and runtime.missing_extensions %}
+      <p class="sub">Missing PHP extensions: {{ runtime.missing_extensions | join(', ') }}</p>
+    {% endif %}
+    <div class="action-row">
+      <form method="POST" action="{{ url_for('download_pocketmine') }}">
+        <button class="btn btn-ghost btn-small" type="submit">Download / update PocketMine</button>
+      </form>
+      <a class="btn btn-ghost btn-small" href="{{ url_for('settings') }}">Server settings</a>
+    </div>
+  </article>
+</section>
+
+<section class="two-col">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Server profile</span>
+        <h2>World and gameplay</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="{{ url_for('worlds') }}">Manage worlds</a>
+    </div>
+    <dl class="info-list compact">
+      <div><dt>MOTD</dt><dd>{{ props.get('motd', '—') }}</dd></div>
+      <div><dt>Game mode</dt><dd>{{ props.get('gamemode', '—') }}</dd></div>
+      <div><dt>Difficulty</dt><dd>{{ props.get('difficulty', '—') }}</dd></div>
+      <div><dt>Whitelist</dt><dd>{{ 'Enabled' if props.get('white-list') in ['true', 'on', '1'] else 'Disabled' }}</dd></div>
+      <div><dt>Xbox authentication</dt><dd>{{ 'Enabled' if props.get('xbox-auth') in ['true', 'on', '1'] else 'Disabled' }}</dd></div>
+      <div><dt>View distance</dt><dd>{{ props.get('view-distance', '10') }} chunks</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Safety</span>
+        <h2>Recent backups</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="{{ url_for('backups_page') }}">All backups</a>
+    </div>
+    <div class="list-stack">
+      {% for backup in backups %}
+        <div class="list-row">
+          <div><b class="mono">{{ backup.name }}</b><small>{{ backup.date }} · {{ backup.size_h }}</small></div>
+          <a class="btn btn-ghost btn-tiny" href="{{ url_for('download_backup', name=backup.name) }}">Download</a>
+        </div>
+      {% else %}
+        <div class="empty">No backups yet. Create one before changing worlds.</div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
 {% endblock %}

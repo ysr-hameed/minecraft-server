@@ -1,7 +1,112 @@
-{% extends "base.html" %}{% block content %}
-<h1 style="font-family:'Space Grotesk'">Live Console & Logs 📜</h1><p class="sub">Status: {% if running %}🟢 Running{% else %}🔴 Stopped{% endif %} • Logs auto-refresh</p>
-<div class="logbox" id="logs">{% for l in logs %}{{l}}<br>{% endfor %}</div>
-<form method="POST" style="display:flex;gap:8px;margin-top:12px"><input class="input" name="command" placeholder="Type command: say Hello, gamemode creative SlyxUp, time set day, op Player..." style="margin:0"><button class="btn btn-green">Execute ▶</button></form>
-<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="kbd">say Hi</span><span class="kbd">time set day</span><span class="kbd">weather clear</span><span class="kbd">gamemode creative @a</span><span class="kbd">give @p diamond 64</span></div>
-<script>setInterval(async()=>{let r=await fetch('/api/logs');let d=await r.json();document.getElementById('logs').innerHTML=d.logs.slice(-300).join('<br>');},3000)</script>
+{% extends "base.html" %}
+{% block title %}Console{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Live terminal</span>
+    <h1>Console and logs</h1>
+    <p class="sub">Commands are sent directly to the PocketMine-MP console · {{ stats.port }} UDP</p>
+  </div>
+  <div class="head-actions">
+    <span class="badge {{ 'badge-green' if running else 'badge-red' }}" id="console-status">
+      <span class="badge-dot"></span><span id="console-status-text">{{ 'ONLINE' if running else 'OFFLINE' }}</span>
+    </span>
+    <form method="POST" action="{{ url_for('server_action', action='start') }}">
+      <button class="btn btn-green" type="submit" {{ 'disabled' if running else '' }}>Start</button>
+    </form>
+    <form method="POST" action="{{ url_for('server_action', action='stop') }}" onsubmit="return confirm('Stop the server safely?');">
+      <button class="btn btn-red" type="submit" {{ 'disabled' if not running else '' }}>Stop</button>
+    </form>
+    <form method="POST" action="{{ url_for('server_action', action='restart') }}" onsubmit="return confirm('Restart PocketMine-MP now?');">
+      <button class="btn btn-violet" type="submit">Restart</button>
+    </form>
+  </div>
+</section>
+
+<section class="console-layout">
+  <article class="card console-card">
+    <div class="console-bar">
+      <span class="console-lights"><i></i><i></i><i></i></span>
+      <span class="mono">pocketmine console</span>
+      <span class="console-meta"><span id="console-players">{{ stats.player_count }}</span> online · <span id="console-uptime">{{ stats.uptime }}</span></span>
+    </div>
+    <pre class="console-log" id="console-log">{{ logs | join('\n') }}</pre>
+    <form method="POST" class="console-form">
+      <span class="prompt">›</span>
+      <input class="input console-input" id="command-input" name="command" placeholder="say Hello from SlyxPanel" autocomplete="off" spellcheck="false" required>
+      <button class="btn btn-green" type="submit">Send</button>
+    </form>
+  </article>
+
+  <aside class="card console-side">
+    <span class="eyebrow">PocketMine commands</span>
+    <h2>Quick commands</h2>
+    <div class="quick-commands">
+      <button type="button" data-cmd="list">list</button>
+      <button type="button" data-cmd="say Hello from SlyxPanel">say Hello</button>
+      <button type="button" data-cmd="time set day">time set day</button>
+      <button type="button" data-cmd="weather clear">weather clear</button>
+      <button type="button" data-cmd="gamemode creative @a">creative for all</button>
+      <button type="button" data-cmd="give @p diamond 64">give diamonds</button>
+      <button type="button" data-cmd="save-all">save-all</button>
+    </div>
+    <p class="sub">PocketMine accepts commands without a leading slash. Player commands such as <code>kick</code>, <code>ban</code>, <code>op</code> and <code>whitelist</code> work here too.</p>
+    <div class="divider"></div>
+    <span class="eyebrow">Online now</span>
+    <div class="player-chips" id="online-chips">
+      {% for player in stats.players_online %}
+        <span class="chip">{{ player }}</span>
+      {% else %}
+        <span class="sub">No players connected.</span>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const log = document.getElementById('console-log');
+    const input = document.getElementById('command-input');
+    const statusBadge = document.getElementById('console-status');
+    const statusText = document.getElementById('console-status-text');
+    const players = document.getElementById('console-players');
+    const uptime = document.getElementById('console-uptime');
+    const chips = document.getElementById('online-chips');
+    document.querySelectorAll('[data-cmd]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        input.value = button.getAttribute('data-cmd');
+        input.focus();
+      });
+    });
+    async function refreshLogs() {
+      try {
+        const response = await fetch('{{ url_for("api_logs") }}', {headers: {'Accept': 'application/json'}});
+        if (!response.ok) return;
+        const data = await response.json();
+        const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+        log.textContent = data.logs.join('\n');
+        if (nearBottom) log.scrollTop = log.scrollHeight;
+        statusText.textContent = data.running ? 'ONLINE' : 'OFFLINE';
+        statusBadge.classList.toggle('badge-green', !!data.running);
+        statusBadge.classList.toggle('badge-red', !data.running);
+        players.textContent = data.player_count;
+        uptime.textContent = data.uptime;
+        if (data.players && data.players.length) {
+          chips.innerHTML = data.players.map(function (name) {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.textContent = name;
+            return chip.outerHTML;
+          }).join('');
+        } else {
+          chips.innerHTML = '<span class="sub">No players connected.</span>';
+        }
+      } catch (error) {
+      }
+    }
+    log.scrollTop = log.scrollHeight;
+    setInterval(refreshLogs, 2000);
+  })();
+</script>
 {% endblock %}

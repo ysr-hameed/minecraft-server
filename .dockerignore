@@ -1,0 +1,15 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.env
+runtime
+backups
+uploads
+minecraft_server_bedrock/PocketMine-MP.phar
+minecraft_server_bedrock/*.phar
+minecraft_server_bedrock/worlds
+minecraft_server_bedrock/players
+minecraft_server_bedrock/plugins
+minecraft_server_bedrock/server.log

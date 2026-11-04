@@ -1,4 +1,77 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SlyxPanel - Minecraft</title><link rel="stylesheet" href="/static/style.css"></head><body>
-<header class="top"><div class="logo">⛏️ Slyx<span>Panel</span> <span style="font-size:12px;color:#94a3b8">MINECRAFT</span></div><nav class="nav"><a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a><a href="/console" class="{% if 'console' in request.path %}active{% endif %}">Console</a><a href="/worlds" class="{% if 'world' in request.path %}active{% endif %}">Worlds & Backups</a><a href="/players" class="{% if 'players' in request.path %}active{% endif %}">Players</a><a href="/files" class="{% if 'files' in request.path %}active{% endif %}">Files</a><a href="/settings" class="{% if 'settings' in request.path %}active{% endif %}">Settings</a><a href="/logout">Logout</a></nav></header>
-<div class="wrap">{% with m=get_flashed_messages() %}{% if m %}{% for x in m %}<div class="flash">✓ {{x}}</div>{% endfor %}{% endif %}{% endwith %}{% block content %}{% endblock %}</div>
-<script>async function refreshStats(){try{let r=await fetch('/api/stats');let d=await r.json();let el=document.getElementById('cpu');if(el)el.textContent=d.cpu+'%';let e2=document.getElementById('ram');if(e2)e2.textContent=d.ram_used+' / '+d.ram_total+' MB';let e3=document.getElementById('online');if(e3)e3.textContent=d.player_count;}catch(e){}} setInterval(refreshStats,4000);</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070b14">
+  <title>{% block title %}SlyxPanel{% endblock %} · Bedrock</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261104">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand-mark">S</span>
+      <span class="brand-text">Slyx<span>Panel</span><small>POCKETMINE · BEDROCK</small></span>
+      <span class="status-dot" id="nav-status" title="Checking server"></span>
+    </a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
+      <a href="{{ url_for('console') }}" class="{{ 'active' if request.endpoint == 'console' else '' }}">Console</a>
+      <a href="{{ url_for('worlds') }}" class="{{ 'active' if request.endpoint in ['worlds', 'upload_world', 'download_world'] else '' }}">Worlds</a>
+      <a href="{{ url_for('players') }}" class="{{ 'active' if request.endpoint == 'players' else '' }}">Players</a>
+      <a href="{{ url_for('backups_page') }}" class="{{ 'active' if request.endpoint == 'backups_page' else '' }}">Backups</a>
+      <a href="{{ url_for('files') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('files') else '' }}">Files</a>
+      <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">Settings</a>
+      <a href="{{ url_for('logout') }}" class="nav-logout">Logout</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>SlyxPanel · PocketMine-MP Bedrock control</span>
+    <span>UDP 19132 · Termux ready · VPS ready</span>
+  </footer>
+
+  <script>
+    (function () {
+      const dot = document.getElementById('nav-status');
+      async function refreshShell() {
+        try {
+          const response = await fetch('{{ url_for("api_stats") }}', {headers: {'Accept': 'application/json'}});
+          if (!response.ok) return;
+          const data = await response.json();
+          if (dot) {
+            dot.classList.toggle('online', !!data.running);
+            dot.classList.toggle('offline', !data.running);
+            dot.title = data.running ? 'Server online' : 'Server offline';
+          }
+          document.querySelectorAll('[data-stat]').forEach(function (node) {
+            const key = node.getAttribute('data-stat');
+            if (data[key] !== undefined && data[key] !== null) {
+              node.textContent = data[key];
+            }
+          });
+        } catch (error) {
+        }
+      }
+      refreshShell();
+      setInterval(refreshShell, 5000);
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
