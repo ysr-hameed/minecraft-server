@@ -109,7 +109,7 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 PLAYER_NAME_RE = re.compile(r"^[A-Za-z0-9_. -]{1,32}$")
 WORLD_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 PROPERTY_KEY_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
-BACKUP_NAME_RE = re.compile(r"^backup_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_#\d+\.zip$")
+BACKUP_NAME_RE = re.compile(r"^backup_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_#\d+(_[a-z0-9-]+)?\.zip$")
 JOIN_RE = re.compile(r"^(.{1,32}?) joined the game\.?$")
 LEAVE_RE = re.compile(r"^(.{1,32}?) left the game\.?$")
 VERSION_RE = re.compile(r"PocketMine-MP version ([0-9][0-9A-Za-z.+-]*)")
@@ -1118,7 +1118,7 @@ class ServerManager:
         highest = 0
         if BACKUP_DIR.exists():
             for path in BACKUP_DIR.glob("backup_*.zip"):
-                match = re.search(r"_#(\d+)\.zip$", path.name)
+                match = re.search(r"_#(\d+)(?:_[a-z0-9-]+)?\.zip$", path.name)
                 if match:
                     highest = max(highest, int(match.group(1)))
         return highest + 1
@@ -1144,7 +1144,8 @@ class ServerManager:
                     time.sleep(1.2)
                 timestamp = dt.datetime.now()
                 number = self._next_backup_number()
-                filename = f"backup_{timestamp.strftime('%Y-%m-%d_%H-%M')}_#{number}.zip"
+                safe_label = re.sub(r"[^a-z0-9-]", "", label.lower()) or "manual"
+                filename = f"backup_{timestamp.strftime('%Y-%m-%d_%H-%M')}_#{number}_{safe_label}.zip"
                 destination = BACKUP_DIR / filename
                 temporary = destination.with_suffix(".zip.part")
                 with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
@@ -1172,18 +1173,23 @@ class ServerManager:
             return
         try:
             import boto3
+            from botocore.config import Config
         except ImportError:
             self._append_log("[panel] S3 skipped: boto3 is not installed")
             return
+        endpoint = os.getenv("AWS_ENDPOINT_URL_S3", "").strip() or os.getenv("AWS_ENDPOINT_URL", "").strip() or None
+        kwargs = {
+            "region_name": os.getenv("AWS_REGION", "us-east-1"),
+            "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID") or None,
+            "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY") or None,
+        }
+        if endpoint:
+            kwargs["endpoint_url"] = endpoint
+            kwargs["config"] = Config(s3={"addressing_style": "path"})
         try:
-            client = boto3.client(
-                "s3",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=os.getenv("AWS_REGION", "us-east-1"),
-            )
+            client = boto3.client("s3", **kwargs)
             client.upload_file(str(path), bucket, f"minecraft-backups/{path.name}")
-            self._append_log(f"[panel] Backup uploaded to S3: {path.name}")
+            self._append_log(f"[panel] Backup uploaded to S3: s3://{bucket}/minecraft-backups/{path.name}")
         except Exception as error:
             self._append_log(f"[panel] S3 upload failed: {error}")
 
@@ -1196,9 +1202,11 @@ class ServerManager:
                 stat = path.stat()
             except OSError:
                 continue
+            match = re.search(r"_#\d+_([a-z0-9-]+)\.zip$", path.name)
             backups.append(
                 {
                     "name": path.name,
+                    "type": match.group(1) if match else "manual",
                     "size": stat.st_size,
                     "size_mb": round(stat.st_size / (1024 * 1024), 2),
                     "size_h": human_size(stat.st_size),
@@ -1642,6 +1650,11 @@ class ServerManager:
         self._auto_started = True
         threading.Thread(target=self._auto_backup_loop, daemon=True, name="daily-backup").start()
 
+    def _daily_backup_exists(self, day: str) -> bool:
+        if not BACKUP_DIR.exists():
+            return False
+        return any(BACKUP_DIR.glob(f"backup_{day}_*_daily.zip"))
+
     def _auto_backup_loop(self) -> None:
         while not self._auto_stop.wait(25):
             try:
@@ -1654,10 +1667,13 @@ class ServerManager:
                 hour = int(os.getenv("BACKUP_HOUR", "3"))
                 now = dt.datetime.now()
                 today = now.strftime("%Y-%m-%d")
-                if now.hour == hour and self._last_daily_backup != today:
+                if now.hour >= hour and self._last_daily_backup != today:
                     self._last_daily_backup = today
-                    ok, message = self.create_backup("daily")
-                    self._append_log(f"[panel] Daily backup: {'ok' if ok else 'failed'} - {message}")
+                    if self._daily_backup_exists(today):
+                        self._append_log(f"[panel] Daily backup already exists for today ({today})")
+                    else:
+                        ok, message = self.create_backup("daily")
+                        self._append_log(f"[panel] Daily backup: {'ok' if ok else 'failed'} - {message}")
             except Exception as error:
                 self._append_log(f"[panel] Daily backup error: {error}")
 

@@ -5,7 +5,7 @@
   <div>
     <span class="eyebrow">Disaster recovery</span>
     <h1>Backups</h1>
-    <p class="sub">Manual snapshots plus a daily automatic backup at {{ backup_hour }}:00 · files are stored in <code>backups/</code></p>
+    <p class="sub">Daily automatic backup at {{ backup_hour }}:00 runs <code>save-all</code>, zips the whole world, stores the archive in <code>backups/</code> and uploads a copy to your S3 bucket.</p>
   </div>
   <div class="head-actions">
     <form method="POST" action="{{ url_for('worlds') }}">
@@ -26,17 +26,26 @@
       <span class="eyebrow">Archive</span>
       <h2>{{ backups | length }} backups</h2>
     </div>
-    <span class="badge badge-neutral">backup_YYYY-MM-DD_HH-MM_#N.zip</span>
+    <span class="badge badge-neutral">backup_YYYY-MM-DD_HH-MM_#N_TYPE.zip</span>
   </div>
   <div class="table-wrap">
     <table class="table">
       <thead>
-        <tr><th>Backup</th><th>Created</th><th>Size</th><th>Actions</th></tr>
+        <tr><th>Backup</th><th>Type</th><th>Created</th><th>Size</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for backup in backups %}
           <tr>
             <td><b class="mono">{{ backup.name }}</b></td>
+            <td>
+              {% if backup.type == "daily" %}
+                <span class="badge badge-green">daily</span>
+              {% elif backup.type == "pre-restore" %}
+                <span class="badge badge-violet">safety</span>
+              {% else %}
+                <span class="badge badge-neutral">{{ backup.type }}</span>
+              {% endif %}
+            </td>
             <td>{{ backup.date }}</td>
             <td>{{ backup.size_h }}</td>
             <td>
@@ -56,7 +65,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="4"><div class="empty">No backups yet. Create one before installing plugins or changing worlds.</div></td></tr>
+          <tr><td colspan="5"><div class="empty">No backups yet. Create one before installing plugins or changing worlds.</div></td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -76,8 +85,14 @@
   </article>
   <article class="card muted-card">
     <span class="eyebrow">Cloud copy</span>
-    <h2>Optional S3 upload</h2>
-    <p class="sub">Set <code>AWS_BUCKET_NAME</code> and AWS credentials in <code>.env</code>, then install boto3 separately if you want off-phone copies. Backups always work locally without boto3.</p>
+    <h2>S3 upload {{ "on" if s3_enabled else "off" }}</h2>
+    <p class="sub">
+      {% if s3_enabled %}
+        Daily backups are also uploaded to <code>s3://{{ s3_bucket }}/minecraft-backups/</code> via the endpoint in <code>.env</code>.
+      {% else %}
+        Set <code>AWS_BUCKET_NAME</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_REGION</code> in <code>.env</code> and install boto3 to enable off-device copies. Backups always work locally without it.
+      {% endif %}
+    </p>
     <code class="kbd">python -m pip install --break-system-packages boto3</code>
   </article>
 </section>

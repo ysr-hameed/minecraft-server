@@ -465,6 +465,8 @@ def backups_page():
         "backups.html",
         backups=manager.list_backups(),
         backup_hour=os.getenv("BACKUP_HOUR", "3"),
+        s3_bucket=os.getenv("AWS_BUCKET_NAME", "").strip(),
+        s3_enabled=bool(os.getenv("AWS_BUCKET_NAME", "").strip() and os.getenv("AWS_ACCESS_KEY_ID", "").strip()),
     )
 
 

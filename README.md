@@ -92,7 +92,21 @@ Set the hour in `.env`:
 BACKUP_HOUR=3
 ```
 
-The panel creates one automatic backup per day during that hour. Manual backups are available on the Worlds and Backups pages. A safety backup is created automatically before every restore.
+The panel creates one automatic backup per day at `BACKUP_HOUR`. If the panel was offline at that hour (phone asleep, process killed), the missed backup is created on the next panel start instead of silently skipped. Backups are named `backup_YYYY-MM-DD_HH-MM_#N_daily.zip` and appear on the Backups page with a type badge and a Download link. Manual backups are available on the Worlds and Backups pages. A safety backup is created automatically before every restore.
+
+## S3 / Neon Object Storage Copy
+
+Every backup (daily and manual) is uploaded to S3-compatible storage. Set these in `.env`:
+
+```dotenv
+AWS_BUCKET_NAME=assets
+AWS_ENDPOINT_URL_S3=https://your-endpoint.storage.c-8.us-east-2.aws.neon.tech
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-2
+```
+
+Uploads go to `s3://<bucket>/minecraft-backups/<backup-name>.zip`. Backups still work locally without S3. Never commit `.env` — it is already gitignored.
 
 ## VPS / Oracle Cloud
 
