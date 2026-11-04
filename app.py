@@ -206,6 +206,21 @@ def download_pocketmine():
     return redirect(request.referrer or url_for("settings"))
 
 
+@app.route("/server/version", methods=["POST"])
+@login_required
+def switch_server_version():
+    flash_result(manager.switch_pocketmine_version(request.form.get("version", "")))
+    return redirect(request.referrer or url_for("settings"))
+
+
+@app.route("/server/version/auto", methods=["POST"])
+@login_required
+def toggle_version_auto():
+    enabled = request.form.get("enabled") in {"on", "true", "1", "yes"}
+    flash_result(manager.set_pocketmine_auto_update(enabled))
+    return redirect(request.referrer or url_for("settings"))
+
+
 @app.route("/worlds", methods=["GET", "POST"])
 @login_required
 def worlds():
@@ -363,6 +378,9 @@ def settings():
         field_groups=FIELD_GROUPS,
         extra_properties=extra_properties,
         runtime=manager.runtime_status(),
+        versions=manager.version_options(),
+        selected_version=manager.selected_version,
+        auto_update=manager.auto_update_enabled(),
         server_dir=str(SERVER_DIR),
     )
 

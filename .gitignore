@@ -19,6 +19,7 @@ minecraft_server_bedrock/*.part
 minecraft_server_bedrock/server.log*
 minecraft_server_bedrock/log_archive/
 minecraft_server_bedrock/plugin_list.yml
+minecraft_server_bedrock/nethernet.key
 minecraft_server_bedrock/crashdumps/
 minecraft_server_bedrock/pocketmine.yml
 minecraft_server_bedrock/ops.txt

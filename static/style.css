@@ -1118,6 +1118,23 @@ label {
   gap: 12px;
 }
 
+.version-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auto-version-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.22);
+}
+
 .field {
   min-width: 0;
 }

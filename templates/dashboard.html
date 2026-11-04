@@ -5,7 +5,7 @@
   <div>
     <span class="eyebrow">Bedrock control room</span>
     <h1>Server dashboard</h1>
-    <p class="sub">PocketMine-MP {{ version if version else stats.version }} · {{ stats.platform }} · Minecraft Bedrock Mobile</p>
+    <p class="sub">PocketMine-MP {{ stats.version }} · Bedrock {{ stats.bedrock }} · protocol {{ stats.protocol or 'unknown' }} · {{ stats.platform }}</p>
   </div>
   <div class="head-actions">
     <span class="badge {{ 'badge-green' if stats.running else 'badge-red' }}">
@@ -69,7 +69,7 @@
   <article class="card stat-card">
     <div class="stat-top"><span class="stat-label">Bedrock port</span><span class="mini-icon">06</span></div>
     <div class="stat-value">{{ stats.port }}<small> UDP</small></div>
-    <p class="sub">PocketMine-MP {{ stats.version }}</p>
+    <p class="sub">Bedrock {{ stats.bedrock }} · protocol {{ stats.protocol or 'unknown' }}</p>
   </article>
   <article class="card stat-card">
     <div class="stat-top"><span class="stat-label">Active world</span><span class="mini-icon">07</span></div>
@@ -89,7 +89,7 @@
     </div>
     <div class="connect-box">
       <div class="connect-step"><span>1</span><p>Open Minecraft Bedrock → <b>Play</b> → <b>Servers</b> → <b>Add Server</b>.</p></div>
-      <div class="connect-step"><span>2</span><p>Use <b>Address</b> <code class="kbd">{{ hosts[0] }}</code> and <b>Port</b> <code class="kbd">{{ props.get('server-port', '19132') }}</code>. The port is <b>UDP</b>, not TCP.</p></div>
+      <div class="connect-step"><span>2</span><p>Use <b>Address</b> <code class="kbd">{{ hosts[0] }}</code> and <b>Port</b> <code class="kbd">{{ props.get('server-port', '19132') }}</code>. RakNet uses <b>UDP</b>; Bedrock 26.60 NetherNet may also use <b>TCP</b> on the same port.</p></div>
       <div class="connect-step"><span>3</span><p>On the same phone use <code class="kbd">127.0.0.1</code>. On Wi-Fi use the LAN address shown above. Accept the server resource pack if prompted.</p></div>
     </div>
     <div class="host-chips">
@@ -112,7 +112,8 @@
     </div>
     <dl class="info-list">
       <div><dt>Server folder</dt><dd class="mono">{{ runtime.server_dir }}</dd></div>
-      <div><dt>PocketMine-MP.phar</dt><dd>{{ runtime.phar_size if runtime.phar else 'not downloaded' }}</dd></div>
+      <div><dt>Selected release</dt><dd>{{ runtime.selected_version }} · Bedrock {{ runtime.bedrock }} · protocol {{ runtime.protocol }}</dd></div>
+      <div><dt>Installed PHAR</dt><dd>{{ runtime.installed_version }} · {{ runtime.phar_size if runtime.phar else 'not downloaded' }}</dd></div>
       <div><dt>PHP runtime</dt><dd class="mono">{{ runtime.php }}</dd></div>
       <div><dt>Platform</dt><dd>{{ runtime.platform }}</dd></div>
     </dl>
@@ -121,9 +122,9 @@
     {% endif %}
     <div class="action-row">
       <form method="POST" action="{{ url_for('download_pocketmine') }}">
-        <button class="btn btn-ghost btn-small" type="submit">Download / update PocketMine</button>
+        <button class="btn btn-ghost btn-small" type="submit">Reinstall selected PHAR</button>
       </form>
-      <a class="btn btn-ghost btn-small" href="{{ url_for('settings') }}">Server settings</a>
+      <a class="btn btn-ghost btn-small" href="{{ url_for('settings') }}">Switch version / settings</a>
     </div>
   </article>
 </section>

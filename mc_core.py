@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import zipfile
+import json
 from collections import deque
 from pathlib import Path
 
@@ -26,13 +27,83 @@ WORLDS_DIR = SERVER_DIR / "worlds"
 
 PHAR_NAME = "PocketMine-MP.phar"
 PHAR_PATH = SERVER_DIR / PHAR_NAME
-POCKETMINE_URL = "https://github.com/pmmp/PocketMine-MP/releases/latest/download/PocketMine-MP.phar"
-PM_PHP_URLS = {
-    ("android", "arm64"): "https://github.com/pmmp/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-Android-arm64-PM5.tar.gz",
-    ("linux", "x86_64"): "https://github.com/pmmp/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-Linux-x86_64-PM5.tar.gz",
-    ("darwin", "arm64"): "https://github.com/pmmp/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-MacOS-arm64-PM5.tar.gz",
-    ("darwin", "x86_64"): "https://github.com/pmmp/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-MacOS-x86_64-PM5.tar.gz",
+SELECTED_VERSION_FILE = RUNTIME_DIR / "pocketmine_version.txt"
+INSTALLED_VERSION_FILE = RUNTIME_DIR / "pocketmine_installed.txt"
+VERSION_CACHE_FILE = RUNTIME_DIR / "pocketmine_versions.json"
+AUTO_UPDATE_FILE = RUNTIME_DIR / "pocketmine_auto_update.txt"
+VERSION_CACHE_TTL = int(os.getenv("MC_VERSION_CACHE_TTL", "21600"))
+
+FALLBACK_POCKETMINE_VERSIONS = {
+    "5.51.1": {
+        "url": "https://github.com/axolotl-pm/PocketMine-MP/releases/download/5.51.1/PocketMine-MP.phar",
+        "bedrock": "26.60",
+        "network_version": "1.26.60",
+        "protocol": 2225,
+        "label": "Latest stable",
+        "requires_webrtc": True,
+        "source": "axolotl-pm",
+    },
+    "5.50.0": {
+        "url": "https://github.com/axolotl-pm/PocketMine-MP/releases/download/5.50.0/PocketMine-MP.phar",
+        "bedrock": "26.50 / 26.52",
+        "network_version": "1.26.50",
+        "protocol": 2193,
+        "label": "Stable",
+        "requires_webrtc": True,
+        "source": "axolotl-pm",
+    },
+    "5.49.2": {
+        "url": "https://github.com/axolotl-pm/PocketMine-MP/releases/download/5.49.2/PocketMine-MP.phar",
+        "bedrock": "26.50 / 26.52",
+        "network_version": "1.26.50",
+        "protocol": 2193,
+        "label": "RakNet only",
+        "requires_webrtc": False,
+        "source": "axolotl-pm",
+    },
+    "5.44.3": {
+        "url": "https://github.com/pmmp/PocketMine-MP/releases/download/5.44.3/PocketMine-MP.phar",
+        "bedrock": "26.30",
+        "network_version": "1.26.30",
+        "protocol": 1001,
+        "label": "Legacy upstream",
+        "requires_webrtc": False,
+        "source": "pmmp",
+    },
 }
+DEFAULT_POCKETMINE_VERSION = os.getenv("MC_POCKETMINE_VERSION", "5.51.1").strip() or "5.51.1"
+PM_PHP_URLS = {
+    ("android", "arm64"): "https://github.com/axolotl-pm/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-Android-arm64-PM5.tar.gz",
+    ("linux", "x86_64"): "https://github.com/axolotl-pm/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-Linux-x86_64-PM5.tar.gz",
+    ("darwin", "arm64"): "https://github.com/axolotl-pm/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-MacOS-arm64-PM5.tar.gz",
+    ("darwin", "x86_64"): "https://github.com/axolotl-pm/PHP-Binaries/releases/download/pm5-php-8.4-latest/PHP-8.4-MacOS-x86_64-PM5.tar.gz",
+}
+
+def _semver_tuple(value: str) -> tuple[int, int, int]:
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", value or "")
+    if not match:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
+
+
+def _read_version_cache() -> dict | None:
+    try:
+        data = json.loads(VERSION_CACHE_FILE.read_text(encoding="utf-8"))
+        versions = data.get("versions")
+        fetched_at = float(data.get("fetched_at", 0))
+        if isinstance(versions, dict) and versions:
+            return {"fetched_at": fetched_at, "versions": versions}
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _write_version_cache(versions: dict) -> None:
+    temporary = VERSION_CACHE_FILE.with_suffix(".tmp")
+    payload = {"fetched_at": time.time(), "versions": versions}
+    temporary.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    temporary.replace(VERSION_CACHE_FILE)
+
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 PLAYER_NAME_RE = re.compile(r"^[A-Za-z0-9_. -]{1,32}$")
@@ -193,12 +264,15 @@ class ServerManager:
         self._log_lock = threading.Lock()
         self._players: set[str] = set()
         self._started_at: float | None = None
-        self._version = "5.x"
+        self._selected_version = self._load_selected_version()
+        self._version = self._selected_version
         self._action_lock = threading.RLock()
         self._download_lock = threading.Lock()
         self._backup_lock = threading.Lock()
+        self._version_lock = threading.Lock()
+        self._last_update_check = 0.0
         self._cpu_previous: tuple[int, int] | None = None
-        self._php_cache: dict[tuple[str, float], tuple[bool, list[str]]] = {}
+        self._php_cache: dict[tuple[str, float, bool], tuple[bool, list[str]]] = {}
         self._bundled_php: Path | None = None
         self._auto_started = False
         self._auto_stop = threading.Event()
@@ -212,6 +286,254 @@ class ServerManager:
     @property
     def version(self) -> str:
         return self._version
+
+    @property
+    def selected_version(self) -> str:
+        return self._selected_version
+
+    def _cached_version_catalog(self) -> dict:
+        cache = _read_version_cache()
+        return cache["versions"] if cache else FALLBACK_POCKETMINE_VERSIONS
+
+    def _version_catalog(self, force: bool = False) -> dict:
+        cache = _read_version_cache()
+        if cache and not force:
+            if time.time() - cache["fetched_at"] < VERSION_CACHE_TTL:
+                return cache["versions"]
+        refreshed = self._refresh_version_catalog()
+        if refreshed:
+            return refreshed
+        return cache["versions"] if cache else FALLBACK_POCKETMINE_VERSIONS
+
+    def _refresh_version_catalog(self) -> dict | None:
+        with self._version_lock:
+            cache = _read_version_cache()
+            if cache and time.time() - cache["fetched_at"] < VERSION_CACHE_TTL:
+                return cache["versions"]
+            try:
+                detected = self._fetch_pocketmine_versions()
+            except Exception as error:
+                self._append_log(f"[panel] Could not refresh PocketMine version catalog: {error}")
+                return None
+            if not detected:
+                return None
+            _write_version_cache(detected)
+            latest = max(detected, key=_semver_tuple)
+            self._append_log(f"[panel] Detected PocketMine-MP {latest} as the newest official Axolotl-PM release")
+            return detected
+
+    def _fetch_text(self, url: str, timeout: int = 10) -> str:
+        response = requests.get(url, timeout=(5, timeout), headers={"User-Agent": "SlyxPanel/1.0"})
+        response.raise_for_status()
+        return response.text
+
+    def _fetch_protocol_releases(self) -> dict[str, str]:
+        try:
+            response = requests.get(
+                "https://api.github.com/repos/axolotl-pm/BedrockProtocol/releases?per_page=40",
+                timeout=(5, 10),
+                headers={"User-Agent": "SlyxPanel/1.0"},
+            )
+            response.raise_for_status()
+            mapping: dict[str, str] = {}
+            for release in response.json():
+                tag = release.get("tag_name", "")
+                match = re.search(r"bedrock-([0-9]+\.[0-9]+\.[0-9]+)$", tag)
+                if match:
+                    mapping.setdefault(match.group(1), tag)
+            return mapping
+        except Exception:
+            return {}
+
+    def _fetch_bedrock_version(self, tag: str, body: str = "") -> str:
+        try:
+            composer = self._fetch_text(
+                f"https://raw.githubusercontent.com/axolotl-pm/PocketMine-MP/{tag}/composer.json"
+            )
+            match = re.search(
+                r'bedrock-protocol":\s*"[^"]*\+bedrock-([0-9]+\.[0-9]+\.[0-9]+)',
+                composer,
+            )
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+        patterns = [
+            r"Minecraft: Bedrock Edition ([0-9]+\.[0-9]+\.[0-9]+)",
+            r"Minecraft: Bedrock Edition ([0-9]+\.[0-9]+)",
+            r"display version v([0-9]+\.[0-9]+)",
+            r"for Bedrock Edition ([0-9]+\.[0-9]+\.[0-9]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, body)
+            if match:
+                version = match.group(1)
+                return version if version.count(".") == 2 else f"1.{version}"
+        return ""
+
+    def _fetch_protocol(self, network_version: str, protocol_releases: dict[str, str]) -> int:
+        tag = protocol_releases.get(network_version)
+        if not tag:
+            return 0
+        try:
+            source = self._fetch_text(
+                f"https://raw.githubusercontent.com/axolotl-pm/BedrockProtocol/{tag}/src/ProtocolInfo.php"
+            )
+            match = re.search(r"CURRENT_PROTOCOL\s*=\s*(\d+)", source)
+            return int(match.group(1)) if match else 0
+        except Exception:
+            return 0
+
+    def _fetch_pocketmine_versions(self) -> dict | None:
+        protocol_releases = self._fetch_protocol_releases()
+        response = requests.get(
+            "https://api.github.com/repos/axolotl-pm/PocketMine-MP/releases?per_page=10",
+            timeout=(5, 10),
+            headers={"User-Agent": "SlyxPanel/1.0"},
+        )
+        response.raise_for_status()
+        detected: dict[str, dict] = {}
+        for release in response.json():
+            if release.get("draft") or release.get("prerelease"):
+                continue
+            tag = str(release.get("tag_name", "")).strip()
+            if not re.fullmatch(r"\d+\.\d+\.\d+", tag):
+                continue
+            asset = next(
+                (
+                    item
+                    for item in release.get("assets", [])
+                    if item.get("name") == PHAR_NAME
+                ),
+                None,
+            )
+            if not asset or not asset.get("browser_download_url"):
+                continue
+            body = release.get("body") or ""
+            network_version = self._fetch_bedrock_version(tag, body)
+            if not network_version:
+                continue
+            protocol = self._fetch_protocol(network_version, protocol_releases)
+            if not protocol:
+                continue
+            display = network_version[2:] if network_version.startswith("1.") else network_version
+            detected[tag] = {
+                "url": asset["browser_download_url"],
+                "bedrock": display,
+                "network_version": network_version,
+                "protocol": protocol,
+                "label": "Stable",
+                "requires_webrtc": _semver_tuple(tag) >= (5, 50, 0) or _semver_tuple(network_version) >= (1, 26, 50),
+                "source": "axolotl-pm",
+            }
+        merged = dict(FALLBACK_POCKETMINE_VERSIONS)
+        merged.update(detected)
+        if not merged:
+            return None
+        ordered = dict(sorted(merged.items(), key=lambda item: _semver_tuple(item[0]), reverse=True))
+        latest = next(iter(ordered))
+        for version, info in ordered.items():
+            item = dict(info)
+            item["label"] = "Latest stable" if version == latest else ("Legacy upstream" if version == "5.44.3" else "Stable")
+            ordered[version] = item
+        return ordered
+
+    def _load_selected_version(self) -> str:
+        candidate = ""
+        try:
+            candidate = SELECTED_VERSION_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+        if not candidate:
+            candidate = os.getenv("MC_POCKETMINE_VERSION", "").strip()
+        if not candidate:
+            candidate = DEFAULT_POCKETMINE_VERSION
+        catalog = self._cached_version_catalog()
+        return candidate if candidate in catalog else DEFAULT_POCKETMINE_VERSION
+
+    def _save_selected_version(self) -> None:
+        temporary = SELECTED_VERSION_FILE.with_suffix(".tmp")
+        temporary.write_text(self._selected_version + "\n", encoding="utf-8")
+        temporary.replace(SELECTED_VERSION_FILE)
+
+    def _read_installed_version(self) -> str:
+        try:
+            return INSTALLED_VERSION_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    def _write_installed_version(self) -> None:
+        temporary = INSTALLED_VERSION_FILE.with_suffix(".tmp")
+        temporary.write_text(self._selected_version + "\n", encoding="utf-8")
+        temporary.replace(INSTALLED_VERSION_FILE)
+
+    def version_info(self) -> dict:
+        catalog = self._version_catalog(False)
+        data = dict(catalog.get(self._selected_version, {}))
+        data["version"] = self._selected_version
+        data["installed"] = self._read_installed_version()
+        data["latest"] = max(catalog, key=_semver_tuple) if catalog else self._selected_version
+        return data
+
+    def version_options(self) -> list[dict]:
+        catalog = self._version_catalog(False)
+        installed = self._read_installed_version()
+        latest = max(catalog, key=_semver_tuple) if catalog else ""
+        options = []
+        for version in sorted(catalog, key=_semver_tuple, reverse=True):
+            data = catalog[version]
+            item = dict(data)
+            item["version"] = version
+            item["selected"] = version == self._selected_version
+            item["installed"] = version == installed
+            item["latest"] = version == latest
+            options.append(item)
+        return options
+
+    def _php_requires_webrtc(self) -> bool:
+        catalog = self._version_catalog(False)
+        data = catalog.get(self._selected_version)
+        if data:
+            return bool(data.get("requires_webrtc", False))
+        return _semver_tuple(self._selected_version) >= (5, 50, 0)
+
+    def auto_update_enabled(self) -> bool:
+        environment = os.getenv("MC_AUTO_UPDATE", "").strip().lower()
+        if environment:
+            return environment in {"1", "true", "yes", "on"}
+        try:
+            return AUTO_UPDATE_FILE.read_text(encoding="utf-8").strip().lower() not in {
+                "",
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+        except OSError:
+            return True
+
+    def set_pocketmine_auto_update(self, enabled: bool) -> tuple[bool, str]:
+        value = "true" if enabled else "false"
+        try:
+            temporary = AUTO_UPDATE_FILE.with_suffix(".tmp")
+            temporary.write_text(value + "\n", encoding="utf-8")
+            temporary.replace(AUTO_UPDATE_FILE)
+            self._last_update_check = time.time()
+            return True, f"Automatic PocketMine updates {'enabled' if enabled else 'disabled'}"
+        except OSError as error:
+            return False, f"Could not save auto-update setting: {error}"
+
+    def maybe_auto_update(self) -> tuple[bool, str]:
+        if not self.auto_update_enabled():
+            return False, "Automatic updates are disabled"
+        catalog = self._version_catalog(False)
+        if not catalog:
+            return False, "No PocketMine versions detected"
+        latest = max(catalog, key=_semver_tuple)
+        if latest == self._selected_version:
+            return False, f"Already on the newest release ({latest})"
+        self._append_log(f"[panel] Automatic update found PocketMine-MP {latest}; switching now")
+        return self.switch_pocketmine_version(latest)
 
     @property
     def log_lines(self) -> list[str]:
@@ -331,10 +653,14 @@ class ServerManager:
         properties = self.get_properties()
         players = sorted(self._players, key=str.lower)
         uptime_seconds, uptime_text = self._uptime()
+        selected = self.version_info()
         return {
             "running": running,
             "type": self.server_type,
             "version": self._version,
+            "selected_version": self._selected_version,
+            "bedrock": selected.get("bedrock", "unknown"),
+            "protocol": selected.get("protocol"),
             "port": properties.get("server-port", "19132"),
             "host": get_lan_ip(),
             "cpu": self._cpu_percent() if running else 0.0,
@@ -426,10 +752,12 @@ class ServerManager:
         self._ensure_files()
         return True, "Settings saved. Restart the server to apply changes."
 
-    def _php_compatible(self, php_binary: Path | str) -> tuple[bool, list[str]]:
+    def _php_compatible(self, php_binary: Path | str, require_webrtc: bool | None = None) -> tuple[bool, list[str]]:
         php_path = Path(php_binary)
+        if require_webrtc is None:
+            require_webrtc = self._php_requires_webrtc()
         try:
-            cache_key = (str(php_path.resolve()), php_path.stat().st_mtime)
+            cache_key = (str(php_path.resolve()), php_path.stat().st_mtime, require_webrtc)
         except OSError:
             return False, ["PHP binary not found"]
         if cache_key in self._php_cache:
@@ -447,7 +775,10 @@ class ServerManager:
                 for line in result.stdout.splitlines()
                 if line.strip() and not line.startswith("[")
             }
-            missing = sorted(REQUIRED_EXTENSIONS - modules)
+            required = set(REQUIRED_EXTENSIONS)
+            if require_webrtc:
+                required.add("webrtc")
+            missing = sorted(required - modules)
             compatible = result.returncode == 0 and not missing
             value = (compatible, missing)
         except (OSError, subprocess.SubprocessError) as error:
@@ -507,6 +838,8 @@ class ServerManager:
                     tar.extractall(destination, filter="data")
                 except TypeError:
                     tar.extractall(destination)
+            self._bundled_php = None
+            self._php_cache.clear()
             php_path = self._bundled_php_path()
             if not php_path:
                 raise RuntimeError("PHP binary was not found in the downloaded archive")
@@ -563,12 +896,18 @@ class ServerManager:
             return None, message
 
     def ensure_pocketmine(self, force: bool = False) -> tuple[bool, str]:
-        if PHAR_PATH.is_file() and PHAR_PATH.stat().st_size > 1_000_000 and not force:
-            return True, "PocketMine-MP is ready"
+        selected = self._selected_version
+        catalog = self._version_catalog(False)
+        data = catalog.get(selected)
+        if not data:
+            return False, f"Unknown PocketMine-MP version: {selected}"
+        installed = self._read_installed_version()
+        if PHAR_PATH.is_file() and PHAR_PATH.stat().st_size > 1_000_000 and installed == selected and not force:
+            return True, f"PocketMine-MP {selected} is ready"
         temporary = SERVER_DIR / f".{PHAR_NAME}.part"
         try:
-            self._append_log("[panel] Downloading PocketMine-MP.phar ...")
-            with requests.get(POCKETMINE_URL, stream=True, timeout=(20, 300), headers={"User-Agent": "SlyxPanel/1.0"}) as response:
+            self._append_log(f"[panel] Downloading PocketMine-MP {selected} for Bedrock {data['bedrock']} ...")
+            with requests.get(data["url"], stream=True, timeout=(20, 300), headers={"User-Agent": "SlyxPanel/1.0"}) as response:
                 response.raise_for_status()
                 final_url = response.url
                 with temporary.open("wb") as output:
@@ -579,14 +918,16 @@ class ServerManager:
                 raise RuntimeError("Downloaded PocketMine-MP.phar is incomplete")
             temporary.replace(PHAR_PATH)
             version_match = re.search(r"/download/([^/]+)/", final_url)
-            if version_match:
-                self._version = version_match.group(1)
-            self._append_log(f"[panel] PocketMine-MP.phar ready ({human_size(PHAR_PATH.stat().st_size)})")
-            return True, "PocketMine-MP.phar downloaded"
+            if version_match and version_match.group(1) in catalog:
+                selected = version_match.group(1)
+            self._version = selected
+            self._write_installed_version()
+            self._append_log(f"[panel] PocketMine-MP {selected} ready ({human_size(PHAR_PATH.stat().st_size)})")
+            return True, f"PocketMine-MP {selected} (Bedrock {data['bedrock']}) downloaded"
         except Exception as error:
             self._append_log(f"[panel] PocketMine download failed: {error}")
             return False, (
-                f"Could not download PocketMine-MP.phar: {error}. "
+                f"Could not download PocketMine-MP {selected}: {error}. "
                 f"Place {PHAR_NAME} in {SERVER_DIR} manually."
             )
         finally:
@@ -594,6 +935,43 @@ class ServerManager:
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
+
+    def switch_pocketmine_version(self, version: str) -> tuple[bool, str]:
+        version = str(version).strip()
+        catalog = self._version_catalog(False)
+        if version not in catalog:
+            return False, "Unknown PocketMine-MP version"
+        if version == self._selected_version and self._read_installed_version() == version and PHAR_PATH.is_file():
+            return True, f"Already using PocketMine-MP {version}"
+        with self._action_lock:
+            was_running = self.process is not None and self.process.poll() is None
+            if was_running:
+                stop_ok, stop_message = self._stop_unlocked()
+                if not stop_ok:
+                    return False, f"Could not stop server before switching: {stop_message}"
+            previous_version = self._selected_version
+            self._selected_version = version
+            self._save_selected_version()
+            self._php_cache.clear()
+            ok, message = self.ensure_pocketmine(force=True)
+            if not ok:
+                self._selected_version = previous_version
+                self._save_selected_version()
+                self._php_cache.clear()
+                if was_running:
+                    self._start_unlocked()
+                return False, message
+            info = catalog[version]
+            restart_message = ""
+            if was_running:
+                start_ok, start_message = self._start_unlocked()
+                restart_message = f" {start_message}."
+                if not start_ok:
+                    restart_message += " Start it again from the dashboard after checking the console."
+            return True, (
+                f"Switched to PocketMine-MP {version} for Bedrock {info['bedrock']} "
+                f"(protocol {info['protocol']}).{restart_message}"
+            )
 
     def _start_unlocked(self) -> tuple[bool, str]:
         if self.process and self.process.poll() is None:
@@ -718,11 +1096,17 @@ class ServerManager:
         missing: list[str] = []
         if php_path:
             php_ready, missing = self._php_compatible(php_path)
+        selected = self.version_info()
         return {
             "platform": platform_label(),
             "server_dir": str(SERVER_DIR),
             "phar": PHAR_PATH.is_file() and PHAR_PATH.stat().st_size > 1_000_000,
             "phar_size": human_size(PHAR_PATH.stat().st_size) if PHAR_PATH.is_file() else "0 B",
+            "selected_version": self._selected_version,
+            "installed_version": self._read_installed_version() or "unknown",
+            "bedrock": selected.get("bedrock", "unknown"),
+            "protocol": selected.get("protocol"),
+            "requires_webrtc": self._php_requires_webrtc(),
             "php": str(php_path) if php_path else "not installed",
             "php_ready": php_ready,
             "missing_extensions": missing,
@@ -1261,6 +1645,12 @@ class ServerManager:
     def _auto_backup_loop(self) -> None:
         while not self._auto_stop.wait(25):
             try:
+                if self.auto_update_enabled() and time.time() - self._last_update_check >= VERSION_CACHE_TTL:
+                    self._last_update_check = time.time()
+                    try:
+                        self.maybe_auto_update()
+                    except Exception as error:
+                        self._append_log(f"[panel] Automatic PocketMine update failed: {error}")
                 hour = int(os.getenv("BACKUP_HOUR", "3"))
                 now = dt.datetime.now()
                 today = now.strftime("%Y-%m-%d")
