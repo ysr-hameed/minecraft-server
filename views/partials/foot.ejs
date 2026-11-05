@@ -1,0 +1,32 @@
+  </main>
+
+  <footer class="footer">
+    <span>SlyxPanel v<%= version %> · Official Minecraft Bedrock Dedicated Server</span>
+    <span>UDP 19132 · RakNet · Node.js</span>
+  </footer>
+
+  <script>
+    (function () {
+      const dot = document.getElementById('nav-status');
+      async function refreshShell() {
+        try {
+          const response = await fetch('/api/stats', { headers: { Accept: 'application/json' } });
+          if (!response.ok) return;
+          const data = await response.json();
+          if (dot) {
+            dot.classList.toggle('online', !!data.running);
+            dot.classList.toggle('offline', !data.running);
+            dot.title = data.running ? 'Server online' : 'Server offline';
+          }
+          document.querySelectorAll('[data-stat]').forEach(function (node) {
+            const key = node.getAttribute('data-stat');
+            if (data[key] !== undefined && data[key] !== null) node.textContent = data[key];
+          });
+        } catch (error) {}
+      }
+      refreshShell();
+      setInterval(refreshShell, 5000);
+    })();
+  </script>
+</body>
+</html>

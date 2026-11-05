@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#070b14">
-  <title>Login · SlyxPanel Bedrock</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261104">
+  <title>Login · SlyxPanel</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body class="login-page">
   <div class="ambient ambient-one"></div>
@@ -16,35 +16,30 @@
         <span class="brand-mark large">S</span>
         <div>
           <h1>SlyxPanel</h1>
-          <p>PocketMine-MP Bedrock server control</p>
+          <p>Official Bedrock Dedicated Server control</p>
         </div>
       </div>
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
-        {% endif %}
-      {% endwith %}
-      <form method="POST" class="login-form">
+      <% if (error) { %><div class="flash error"><%= error %></div><% } %>
+      <form method="POST" action="/login" class="login-form">
+        <input type="hidden" name="next" value="<%= typeof next !== 'undefined' ? next : '/' %>">
         <label for="password">Panel password</label>
         <input class="input" id="password" type="password" name="password" placeholder="Enter MC_PANEL_PASSWORD" autocomplete="current-password" required autofocus>
         <button class="btn btn-green btn-block" type="submit">Unlock panel</button>
       </form>
       <div class="login-foot">
-        <span>Default password: <b>admin123</b></span>
-        <span>Change it in <code>.env</code></span>
+        <span>Password comes from <code>MC_PANEL_PASSWORD</code></span>
+        <span>Default: <b>admin123</b></span>
       </div>
     </section>
     <aside class="login-aside">
       <span class="pill">BEDROCK ONLY</span>
-      <h2>Your phone is the server.</h2>
-      <p>Start, stop and manage a PocketMine-MP world from any browser. Connect from Minecraft Bedrock on port <b>19132 UDP</b>.</p>
+      <h2>The official server. The latest version.</h2>
+      <p>Run the Mojang Bedrock Dedicated Server on a public VPS and connect from Minecraft Bedrock on <b>UDP 19132</b>.</p>
       <div class="login-points">
-        <span>Termux-safe resource stats</span>
-        <span>Live console and commands</span>
-        <span>Worlds, players and backups</span>
-        <span>ARM64 friendly, no Java runtime</span>
+        <span>Official latest Bedrock build</span>
+        <span>RakNet transport for maximum compatibility</span>
+        <span>Live console, worlds, players and backups</span>
+        <span>Node.js panel with systemd deployment</span>
       </div>
     </aside>
   </div>

@@ -1,42 +1,42 @@
-__pycache__/
-*.py[cod]
-*.pyo
+node_modules/
+npm-debug.log*
 .env
 .env.*
 !.env.example
-.venv/
-venv/
 
-runtime/
-uploads/*
-!uploads/.gitkeep
+bedrock_server/
 backups/*
 !backups/.gitkeep
+uploads/*
+!uploads/.gitkeep
+runtime/
+logs/
+panel-data/
+*.log
+*.zip
+*.tmp
+.minecraft-bedrock-server/
 
-minecraft_server_bedrock/PocketMine-MP.phar
-minecraft_server_bedrock/*.phar
-minecraft_server_bedrock/*.part
-minecraft_server_bedrock/server.log*
-minecraft_server_bedrock/log_archive/
-minecraft_server_bedrock/plugin_list.yml
-minecraft_server_bedrock/nethernet.key
-minecraft_server_bedrock/crashdumps/
-minecraft_server_bedrock/pocketmine.yml
-minecraft_server_bedrock/ops.txt
-minecraft_server_bedrock/white-list.txt
-minecraft_server_bedrock/whitelist.txt
-minecraft_server_bedrock/banned-players.txt
-minecraft_server_bedrock/banned-ips.txt
-minecraft_server_bedrock/players/*
-!minecraft_server_bedrock/players/.gitkeep
-minecraft_server_bedrock/worlds/*
-!minecraft_server_bedrock/worlds/.gitkeep
-minecraft_server_bedrock/plugin_data/
-minecraft_server_bedrock/resource_packs/
-minecraft_server_bedrock/plugins/*.phar
-minecraft_server_bedrock/plugins/*/
-!minecraft_server_bedrock/plugins/.gitkeep
+__pycache__/
+*.py[cod]
+.python-version
 
 .DS_Store
 Thumbs.db
-*.tmp
+
+# Local secrets and keys
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+ssh-key*
+.opencode/
+
+# Old PocketMine data
+minecraft_server_bedrock/
+
+# Build/test artifacts
+dist/
+coverage/
+.nyc_output/
+*.tar.gz

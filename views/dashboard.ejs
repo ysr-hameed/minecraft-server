@@ -1,0 +1,171 @@
+<%- include('partials/head', { title: 'Dashboard', active: active }) %>
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Bedrock control room</span>
+    <h1>Server dashboard</h1>
+    <p class="sub">Bedrock Dedicated Server <%= stats.version %> · protocol <%= stats.protocol || 'negotiated on join' %> · <%= stats.platform %></p>
+  </div>
+  <div class="head-actions">
+    <span class="badge <%= stats.running ? 'badge-green' : 'badge-red' %>">
+      <span class="badge-dot"></span><%= stats.running ? 'ONLINE' : 'OFFLINE' %>
+    </span>
+    <form method="POST" action="/server/start">
+      <button class="btn btn-green" type="submit" <%= stats.running ? 'disabled' : '' %>>Start</button>
+    </form>
+    <form method="POST" action="/server/stop" onsubmit="return confirm('Stop the server safely? The world is saved first.');">
+      <button class="btn btn-red" type="submit" <%= !stats.running ? 'disabled' : '' %>>Stop</button>
+    </form>
+    <form method="POST" action="/server/restart" onsubmit="return confirm('Restart the Bedrock server now?');">
+      <button class="btn btn-violet" type="submit">Restart</button>
+    </form>
+  </div>
+</section>
+
+<% if (runtime.error) { %>
+  <div class="notice notice-error"><b>Version check failed:</b> <%= runtime.error %></div>
+<% } %>
+<% if (!runtime.binary) { %>
+  <div class="notice">
+    <b>First start:</b> the panel will download the official Bedrock Dedicated Server from Mojang automatically. This needs internet access once.
+  </div>
+<% } else if (runtime.update_available) { %>
+  <div class="notice">
+    <b>Update available:</b> Bedrock <%= runtime.latest_version %> is available (installed <%= runtime.installed_version %>).
+    <a href="/settings">Update from Settings</a> so clients on the newest Minecraft version can join.
+  </div>
+<% } %>
+
+<section class="stats-grid">
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Server status</span><span class="mini-icon">01</span></div>
+    <div class="stat-value"><%= stats.running ? 'Online' : 'Offline' %></div>
+    <div class="progress"><span style="width: <%= stats.running ? 100 : 0 %>%"></span></div>
+    <p class="sub">PID <%= stats.pid || '—' %> · uptime <%= stats.uptime %></p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">CPU load</span><span class="mini-icon">02</span></div>
+    <div class="stat-value"><%= stats.cpu %><small>%</small></div>
+    <div class="progress"><span style="width: <%= stats.cpu %>%"></span></div>
+    <p class="sub"><%= stats.cores %> cores · server RAM <%= stats.proc_mem_mb %> MB</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">RAM usage</span><span class="mini-icon">03</span></div>
+    <div class="stat-value"><%= stats.ram_used %><small> / <%= stats.ram_total %> MB</small></div>
+    <div class="progress"><span style="width: <%= stats.ram_percent %>%"></span></div>
+    <p class="sub"><%= stats.ram_percent %>% memory used</p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Disk usage</span><span class="mini-icon">04</span></div>
+    <div class="stat-value"><%= stats.disk_used %><small> / <%= stats.disk_total %> GB</small></div>
+    <div class="progress"><span style="width: <%= stats.disk_percent %>%"></span></div>
+    <p class="sub"><%= stats.disk_percent %>% storage used</p>
+  </article>
+</section>
+
+<section class="stats-grid stats-grid-small">
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Players online</span><span class="mini-icon">05</span></div>
+    <div class="stat-value"><%= stats.player_count %><small> / <%= props['max-players'] || '20' %></small></div>
+    <p class="sub"><%= stats.players_online.length ? stats.players_online.join(', ') : 'No players connected' %></p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Bedrock port</span><span class="mini-icon">06</span></div>
+    <div class="stat-value"><%= stats.port %><small> UDP</small></div>
+    <p class="sub">Transport: <%= runtime.transport %> · IPv6 <%= props['server-portv6'] || '19133' %></p>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-top"><span class="stat-label">Active world</span><span class="mini-icon">07</span></div>
+    <div class="stat-value small-value"><%= props['level-name'] || 'Bedrock level' %></div>
+    <p class="sub">Seed: <%= props['level-seed'] || 'random' %></p>
+  </article>
+</section>
+
+<section class="two-col">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Quick start</span>
+        <h2>Connect from Minecraft Bedrock</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="/console">Open console</a>
+    </div>
+    <div class="connect-box">
+      <div class="connect-step"><span>1</span><p>Open Minecraft Bedrock → <b>Play</b> → <b>Servers</b> → <b>Add Server</b>.</p></div>
+      <div class="connect-step"><span>2</span><p>Use <b>Address</b> <code class="kbd"><%= hosts[0] %></code> and <b>Port</b> <code class="kbd"><%= props['server-port'] || '19132' %></code>. This build uses Mojang's <b>NetherNet</b> transport: TCP <b><%= props['server-port'] || '19132' %></b> for signaling and UDP for gameplay on the same port.</p></div>
+      <div class="connect-step"><span>3</span><p>Your Minecraft version must match the server. This panel installs the newest official Bedrock build automatically.</p></div>
+    </div>
+    <div class="host-chips">
+      <% hosts.forEach(function (host) { %>
+        <span class="chip"><b><%= host %></b><small>:<%= props['server-port'] || '19132' %> UDP</small></span>
+      <% }); %>
+    </div>
+    <p class="sub">Bedrock only. No Java server, no server.jar, no Geyser layer.</p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Runtime</span>
+        <h2>Official Bedrock health</h2>
+      </div>
+      <span class="badge <%= runtime.binary ? 'badge-green' : 'badge-amber' %>"><%= runtime.binary ? 'READY' : 'SETUP NEEDED' %></span>
+    </div>
+    <dl class="info-list">
+      <div><dt>Server folder</dt><dd class="mono"><%= runtime.server_dir %></dd></div>
+      <div><dt>Installed build</dt><dd><%= runtime.installed_version %> · <%= runtime.binary_size %></dd></div>
+      <div><dt>Latest official</dt><dd><%= runtime.latest_version %></dd></div>
+      <div><dt>Transport</dt><dd><%= runtime.transport %></dd></div>
+      <div><dt>Platform</dt><dd><%= runtime.platform %></dd></div>
+      <div><dt>Automatic updates</dt><dd><%= autoUpdate ? 'Enabled' : 'Disabled' %></dd></div>
+    </dl>
+    <div class="action-row">
+      <form method="POST" action="/server/install">
+        <button class="btn btn-ghost btn-small" type="submit">Download / reinstall latest</button>
+      </form>
+      <a class="btn btn-ghost btn-small" href="/settings">Version settings</a>
+    </div>
+  </article>
+</section>
+
+<section class="two-col">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Server profile</span>
+        <h2>World and gameplay</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="/worlds">Manage worlds</a>
+    </div>
+    <dl class="info-list compact">
+      <div><dt>Server name</dt><dd><%= props['server-name'] || '—' %></dd></div>
+      <div><dt>Game mode</dt><dd><%= props.gamemode || '—' %></dd></div>
+      <div><dt>Difficulty</dt><dd><%= props.difficulty || '—' %></dd></div>
+      <div><dt>Allow list</dt><dd><%= ['true','on','1'].includes(String(props['allow-list']).toLowerCase()) ? 'Enabled' : 'Disabled' %></dd></div>
+      <div><dt>Xbox authentication</dt><dd><%= ['true','on','1'].includes(String(props['online-mode']).toLowerCase()) ? 'Enabled' : 'Disabled' %></dd></div>
+      <div><dt>View distance</dt><dd><%= props['view-distance'] || '10' %> chunks</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Safety</span>
+        <h2>Recent backups</h2>
+      </div>
+      <a class="btn btn-ghost btn-small" href="/backups">All backups</a>
+    </div>
+    <div class="list-stack">
+      <% if (backups.length) { %>
+        <% backups.forEach(function (backup) { %>
+          <div class="list-row">
+            <div><b class="mono"><%= backup.name %></b><small><%= backup.date %> · <%= backup.size_h %></small></div>
+            <a class="btn btn-ghost btn-tiny" href="/backup/download/<%= encodeURIComponent(backup.name) %>">Download</a>
+          </div>
+        <% }); %>
+      <% } else { %>
+        <div class="empty">No backups yet. Create one before changing worlds.</div>
+      <% } %>
+    </div>
+  </article>
+</section>
+<%- include('partials/foot') %>

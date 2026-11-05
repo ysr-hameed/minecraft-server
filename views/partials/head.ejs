@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070b14">
+  <title><%= typeof title !== 'undefined' ? title : 'Dashboard' %> · SlyxPanel</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark">S</span>
+      <span class="brand-text">Slyx<span>Panel</span><small>OFFICIAL BDS · BEDROCK</small></span>
+      <span class="status-dot" id="nav-status" title="Checking server"></span>
+    </a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="/" class="<%= active === 'dashboard' ? 'active' : '' %>">Dashboard</a>
+      <a href="/console" class="<%= active === 'console' ? 'active' : '' %>">Console</a>
+      <a href="/worlds" class="<%= active === 'worlds' ? 'active' : '' %>">Worlds</a>
+      <a href="/players" class="<%= active === 'players' ? 'active' : '' %>">Players</a>
+      <a href="/backups" class="<%= active === 'backups' ? 'active' : '' %>">Backups</a>
+      <a href="/files" class="<%= active === 'files' ? 'active' : '' %>">Files</a>
+      <a href="/settings" class="<%= active === 'settings' ? 'active' : '' %>">Settings</a>
+      <a href="/logout" class="nav-logout">Logout</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <% if (typeof flash !== 'undefined' && flash.length) { %>
+      <div class="flash-stack">
+        <% flash.forEach(function (item) { %>
+          <div class="flash <%= item.type %>"><%= item.message %></div>
+        <% }); %>
+      </div>
+    <% } %>

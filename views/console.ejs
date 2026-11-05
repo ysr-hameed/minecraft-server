@@ -1,25 +1,17 @@
-{% extends "base.html" %}
-{% block title %}Console{% endblock %}
-{% block content %}
+<%- include('partials/head', { title: 'Console', active: active }) %>
 <section class="page-head">
   <div>
     <span class="eyebrow">Live terminal</span>
     <h1>Console and logs</h1>
-    <p class="sub">Commands are sent directly to the PocketMine-MP console · {{ stats.port }} UDP</p>
+    <p class="sub">Commands are written directly to the official Bedrock server console · <%= stats.port %> UDP</p>
   </div>
   <div class="head-actions">
-    <span class="badge {{ 'badge-green' if running else 'badge-red' }}" id="console-status">
-      <span class="badge-dot"></span><span id="console-status-text">{{ 'ONLINE' if running else 'OFFLINE' }}</span>
+    <span class="badge <%= running ? 'badge-green' : 'badge-red' %>" id="console-status">
+      <span class="badge-dot"></span><span id="console-status-text"><%= running ? 'ONLINE' : 'OFFLINE' %></span>
     </span>
-    <form method="POST" action="{{ url_for('server_action', action='start') }}">
-      <button class="btn btn-green" type="submit" {{ 'disabled' if running else '' }}>Start</button>
-    </form>
-    <form method="POST" action="{{ url_for('server_action', action='stop') }}" onsubmit="return confirm('Stop the server safely?');">
-      <button class="btn btn-red" type="submit" {{ 'disabled' if not running else '' }}>Stop</button>
-    </form>
-    <form method="POST" action="{{ url_for('server_action', action='restart') }}" onsubmit="return confirm('Restart PocketMine-MP now?');">
-      <button class="btn btn-violet" type="submit">Restart</button>
-    </form>
+    <form method="POST" action="/server/start"><button class="btn btn-green" type="submit" <%= running ? 'disabled' : '' %>>Start</button></form>
+    <form method="POST" action="/server/stop" onsubmit="return confirm('Stop the server safely?');"><button class="btn btn-red" type="submit" <%= !running ? 'disabled' : '' %>>Stop</button></form>
+    <form method="POST" action="/server/restart" onsubmit="return confirm('Restart the Bedrock server now?');"><button class="btn btn-violet" type="submit">Restart</button></form>
   </div>
 </section>
 
@@ -27,11 +19,11 @@
   <article class="card console-card">
     <div class="console-bar">
       <span class="console-lights"><i></i><i></i><i></i></span>
-      <span class="mono">pocketmine console</span>
-      <span class="console-meta"><span id="console-players">{{ stats.player_count }}</span> online · <span id="console-uptime">{{ stats.uptime }}</span></span>
+      <span class="mono">bedrock_server console</span>
+      <span class="console-meta"><span id="console-players"><%= stats.player_count %></span> online · <span id="console-uptime"><%= stats.uptime %></span></span>
     </div>
-    <pre class="console-log" id="console-log">{{ logs | join('\n') }}</pre>
-    <form method="POST" class="console-form">
+    <pre class="console-log" id="console-log"><%= logs.join('\n') %></pre>
+    <form method="POST" action="/console" class="console-form">
       <span class="prompt">›</span>
       <input class="input console-input" id="command-input" name="command" placeholder="say Hello from SlyxPanel" autocomplete="off" spellcheck="false" required>
       <button class="btn btn-green" type="submit">Send</button>
@@ -39,7 +31,7 @@
   </article>
 
   <aside class="card console-side">
-    <span class="eyebrow">PocketMine commands</span>
+    <span class="eyebrow">Bedrock commands</span>
     <h2>Quick commands</h2>
     <div class="quick-commands">
       <button type="button" data-cmd="list">list</button>
@@ -48,22 +40,22 @@
       <button type="button" data-cmd="weather clear">weather clear</button>
       <button type="button" data-cmd="gamemode creative @a">creative for all</button>
       <button type="button" data-cmd="give @p diamond 64">give diamonds</button>
-      <button type="button" data-cmd="save-all">save-all</button>
+      <button type="button" data-cmd="save hold">save hold</button>
+      <button type="button" data-cmd="save resume">save resume</button>
     </div>
-    <p class="sub">PocketMine accepts commands without a leading slash. Player commands such as <code>kick</code>, <code>ban</code>, <code>op</code> and <code>whitelist</code> work here too.</p>
+    <p class="sub">Official Bedrock console commands work here without a leading slash. Player commands such as <code>kick</code>, <code>ban</code>, <code>op</code> and <code>allowlist</code> are supported.</p>
     <div class="divider"></div>
     <span class="eyebrow">Online now</span>
     <div class="player-chips" id="online-chips">
-      {% for player in stats.players_online %}
-        <span class="chip">{{ player }}</span>
-      {% else %}
+      <% if (stats.players_online.length) { %>
+        <% stats.players_online.forEach(function (player) { %><span class="chip"><%= player %></span><% }); %>
+      <% } else { %>
         <span class="sub">No players connected.</span>
-      {% endfor %}
+      <% } %>
     </div>
   </aside>
 </section>
-{% endblock %}
-{% block scripts %}
+<%- include('partials/foot') %>
 <script>
   (function () {
     const log = document.getElementById('console-log');
@@ -81,7 +73,7 @@
     });
     async function refreshLogs() {
       try {
-        const response = await fetch('{{ url_for("api_logs") }}', {headers: {'Accept': 'application/json'}});
+        const response = await fetch('/api/logs', { headers: { Accept: 'application/json' } });
         if (!response.ok) return;
         const data = await response.json();
         const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
@@ -91,7 +83,7 @@
         statusBadge.classList.toggle('badge-green', !!data.running);
         statusBadge.classList.toggle('badge-red', !data.running);
         players.textContent = data.player_count;
-        uptime.textContent = data.uptime;
+        uptime.textContent = data.uptime ? data.uptime + 's' : '—';
         if (data.players && data.players.length) {
           chips.innerHTML = data.players.map(function (name) {
             const chip = document.createElement('span');
@@ -102,11 +94,9 @@
         } else {
           chips.innerHTML = '<span class="sub">No players connected.</span>';
         }
-      } catch (error) {
-      }
+      } catch (error) {}
     }
     log.scrollTop = log.scrollHeight;
     setInterval(refreshLogs, 2000);
   })();
 </script>
-{% endblock %}

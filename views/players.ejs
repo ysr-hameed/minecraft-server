@@ -1,0 +1,124 @@
+<%- include('partials/head', { title: 'Players', active: active }) %>
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Access control</span>
+    <h1>Players</h1>
+    <p class="sub">Allow list, operators, bans and kicks · <%= onlineCount %> online now</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="/console">Open console</a>
+  </div>
+</section>
+
+<section class="two-col players-layout">
+  <article class="card">
+    <div class="card-head">
+      <div><span class="eyebrow">Action</span><h2>Manage a player</h2></div>
+    </div>
+    <form method="POST" action="/players" class="form-grid two-fields">
+      <label>Player name
+        <input class="input" name="player" placeholder="Bedrock player name" required maxlength="32">
+      </label>
+      <label>Action
+        <select class="select" name="action">
+          <option value="whitelist_add">Allow list add</option>
+          <option value="whitelist_remove">Allow list remove</option>
+          <option value="op">Make operator</option>
+          <option value="deop">Remove operator</option>
+          <option value="ban">Ban player</option>
+          <option value="pardon">Unban player</option>
+          <option value="kick">Kick player</option>
+        </select>
+      </label>
+      <button class="btn btn-green" type="submit">Apply action</button>
+    </form>
+    <p class="sub">When the server is running, actions are sent as official Bedrock commands. When it is stopped, the panel edits <code>allowlist.json</code> and <code>permissions.json</code>. Operator changes need the player to have joined once so their XUID is known.</p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div><span class="eyebrow">Find</span><h2>Search players</h2></div>
+    </div>
+    <form method="GET" action="/players" class="form-grid two-fields">
+      <label>Name contains
+        <input class="input" name="q" value="<%= query %>" placeholder="Search username">
+      </label>
+      <label>Filter
+        <select class="select" name="filter">
+          <option value="all" <%= selectedFilter === 'all' ? 'selected' : '' %>>All players</option>
+          <option value="online" <%= selectedFilter === 'online' ? 'selected' : '' %>>Online now</option>
+          <option value="op" <%= selectedFilter === 'op' ? 'selected' : '' %>>Operators</option>
+          <option value="banned" <%= selectedFilter === 'banned' ? 'selected' : '' %>>Banned</option>
+          <option value="whitelisted" <%= selectedFilter === 'whitelisted' ? 'selected' : '' %>>Allow list</option>
+        </select>
+      </label>
+      <button class="btn btn-ghost" type="submit">Filter players</button>
+    </form>
+  </article>
+</section>
+
+<article class="card">
+  <div class="card-head">
+    <div><span class="eyebrow">Directory</span><h2><%= players.length %> player records</h2></div>
+    <span class="badge badge-neutral"><%= onlineCount %> online</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Player</th><th>State</th><th>Access</th><th>Actions</th></tr></thead>
+      <tbody>
+        <% if (players.length) { %>
+          <% players.forEach(function (player) { %>
+            <tr>
+              <td>
+                <div class="player-name">
+                  <span class="avatar"><%= player.name.slice(0, 1).toUpperCase() %></span>
+                  <div><b><%= player.name %></b><small><%= player.online ? 'Connected now' : 'Offline' %></small></div>
+                </div>
+              </td>
+              <td>
+                <span class="badge <%= player.online ? 'badge-green' : 'badge-neutral' %>"><%= player.online ? 'ONLINE' : 'OFFLINE' %></span>
+                <% if (player.banned) { %><span class="badge badge-red">BANNED</span><% } %>
+              </td>
+              <td>
+                <div class="badge-stack">
+                  <% if (player.op) { %><span class="badge badge-violet">OP</span><% } %>
+                  <% if (player.whitelisted) { %><span class="badge badge-green">ALLOW LIST</span><% } %>
+                  <% if (!player.op && !player.whitelisted && !player.banned) { %><span class="sub">Standard player</span><% } %>
+                </div>
+              </td>
+              <td>
+                <div class="action-row">
+                  <form method="POST" action="/players">
+                    <input type="hidden" name="player" value="<%= player.name %>">
+                    <input type="hidden" name="action" value="<%= player.op ? 'deop' : 'op' %>">
+                    <button class="btn btn-ghost btn-tiny" type="submit"><%= player.op ? 'Deop' : 'Op' %></button>
+                  </form>
+                  <form method="POST" action="/players">
+                    <input type="hidden" name="player" value="<%= player.name %>">
+                    <input type="hidden" name="action" value="<%= player.whitelisted ? 'whitelist_remove' : 'whitelist_add' %>">
+                    <button class="btn btn-ghost btn-tiny" type="submit"><%= player.whitelisted ? 'Remove' : 'Allow' %></button>
+                  </form>
+                  <form method="POST" action="/players">
+                    <input type="hidden" name="player" value="<%= player.name %>">
+                    <input type="hidden" name="action" value="<%= player.banned ? 'pardon' : 'ban' %>">
+                    <button class="btn <%= player.banned ? 'btn-green' : 'btn-red' %> btn-tiny" type="submit"><%= player.banned ? 'Unban' : 'Ban' %></button>
+                  </form>
+                  <% if (player.online) { %>
+                    <form method="POST" action="/players">
+                      <input type="hidden" name="player" value="<%= player.name %>">
+                      <input type="hidden" name="action" value="kick">
+                      <button class="btn btn-red btn-tiny" type="submit">Kick</button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="4"><div class="empty">No player records match this view. Add a player above or let someone join the server.</div></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</article>
+<%- include('partials/foot') %>

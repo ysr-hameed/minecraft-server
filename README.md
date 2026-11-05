@@ -1,194 +1,158 @@
-# SlyxPanel - PocketMine-MP Bedrock Panel
+# SlyxPanel — Official Minecraft Bedrock Server + Node.js Panel
 
-A Flask control panel for a pure Minecraft Bedrock server powered by PocketMine-MP 5.x. It is built for Termux on Android ARM64 and also runs on a Linux VPS such as Oracle Cloud.
+A Node.js control panel for the **official Mojang Bedrock Dedicated Server (BDS)**. It always installs the latest official Linux build, so the server version matches current Minecraft Bedrock clients.
 
-- Bedrock only: PocketMine-MP + PHP, UDP `19132` and NetherNet TCP `19132`
-- Latest supported release: **PocketMine-MP 5.51.1 for Minecraft Bedrock 26.60** (protocol 2225)
-- One-click version switching for Bedrock 26.60, 26.52/26.50 and legacy 26.30
-- Minecraft Bedrock Mobile, Xbox and Windows Bedrock clients can connect
-- No Java server, no Paper, no Purpur, no Geyser, no `server.jar`
-- No `psutil`, so no `/proc/stat` permission crash on Android
-- No virtual environment needed; run the project from `~/minecraft_panel`
+The old PocketMine-Axolotl setup only supported Bedrock 1.26.60 (protocol 2225). Current clients are on 1.26.62.x, and PocketMine's NetherNet transport needs extra UDP ports. That is why nobody could join. This version fixes both problems:
 
-The upstream `pmmp/PocketMine-MP` project ended support at 5.44.3 for Bedrock 26.30. This panel uses the maintained **Axolotl-PM** fork for Bedrock 26.50, 26.52 and 26.60 releases.
-
-## Termux Quick Start
-
-```bash
-termux-setup-storage
-mv /storage/emulated/0/Download/minecraft_panel ~/minecraft_panel
-cd ~/minecraft_panel
-pkg update -y
-pkg install -y python curl tar zip unzip
-python -m pip install --break-system-packages -r requirements.txt
-curl -L -o minecraft_server_bedrock/PocketMine-MP.phar https://github.com/axolotl-pm/PocketMine-MP/releases/download/5.51.1/PocketMine-MP.phar
-python app.py
-```
-
-If the project is already in `~/minecraft_panel`, skip the `mv` line.
-
-Open the panel:
-
-```text
-http://localhost:5000
-```
-
-Default password: `admin123`. Change it in `.env`:
-
-```dotenv
-MC_PANEL_PASSWORD=your-strong-password
-SECRET_KEY=your-long-random-secret
-```
-
-On the first server start the panel automatically downloads a PocketMine-compatible PHP runtime if the system PHP does not have the required extensions. PocketMine-MP.phar is also downloaded automatically when missing.
-
-The recommended PHP runtime is the Axolotl-PM PHP 8.4 build because Bedrock 26.60 NetherNet needs the `webrtc` extension. If an older runtime is present, the panel replaces it automatically when a NetherNet release is selected.
-
-## Connect From Minecraft Bedrock Mobile
-
-1. Open Minecraft Bedrock.
-2. Go to **Play** -> **Servers** -> **Add Server**.
-3. Use address `127.0.0.1` when the phone hosts both the panel and the game. On Wi-Fi use the LAN IP shown on the dashboard.
-4. Use port `19132`. RakNet uses **UDP 19132**. Bedrock 26.60 NetherNet may also use **TCP 19132** on the same port.
-
-The server must be running before the client joins. On a VPS, open `19132/UDP`, `19132/TCP` and `19133/UDP` in the firewall or Oracle Security List. The panel itself uses TCP port `5000`.
+- Official `bedrock_server` from `minecraft.net` (latest stable automatically)
+- NetherNet transport with a **fixed** public UDP gameplay port (`19132`) so the firewall can pass it
+- `TCP 19132` (NetherNet signaling) and `UDP 19132` (gameplay), both opened by `deploy_vps.sh`
+- Node.js panel with systemd service, no Python, no PHP, no Docker required
 
 ## Features
 
-- Dashboard with Termux-safe CPU, RAM and disk values, server status and online players
-- Start, stop and restart with a graceful PocketMine `stop` and world save
-- Live console, log viewer and command execution for `say`, `kick`, `ban`, `op`, `whitelist` and every other PocketMine command
-- Worlds: upload ZIP, download ZIP, activate, delete, and create a new world with seed, game mode, difficulty and world type
-- Players: search, filter, whitelist, operator, ban, unban and kick
-- Backups: manual and daily automatic backups named `backup_YYYY-MM-DD_HH-MM_#12.zip`, with download, restore and delete
-- Optional S3 upload when `AWS_BUCKET_NAME` is set and `boto3` is installed separately
-- Settings editor for PocketMine `server.properties`
-- PocketMine version switcher with automatic PHAR and PHP runtime updates
-- File manager for everything inside `minecraft_server_bedrock/`
-- Password authentication from `MC_PANEL_PASSWORD`
+- Dashboard with status, CPU, RAM, disk, uptime, players and version
+- Start / stop / restart with graceful world save
+- Live console with command input and quick commands
+- Players: allow list, operators, bans, kicks (official Bedrock commands)
+- Worlds: activate, create, upload ZIP, download ZIP, delete
+- Backups: manual + daily, `save hold` / `save resume` consistency, restore and download
+- Optional S3-compatible backup upload (Neon, AWS, MinIO, ...)
+- Settings editor for `server.properties`
+- File manager for the whole `bedrock_server/` folder
+- Version switcher fed by Mojang's official download API
+- Automatic update check and optional automatic install when idle
 
-## PocketMine Version Switching
+## VPS deployment (Ubuntu / Debian)
 
-Open **Settings -> PocketMine version**, choose a release and press **Switch and update**. If the server is running, the panel stops it safely, downloads the new PHAR, updates the PHP runtime when needed, and starts the server again.
-
-The version list is not hard-coded as a one-time choice. The panel reads the maintained Axolotl-PM GitHub releases and BedrockProtocol tags every 6 hours, detects the Bedrock version and protocol from the release metadata, and adds new releases to the dropdown automatically.
-
-Automatic updates are enabled by default. When a newer verified PocketMine-MP release appears, the panel switches to it with the same safe stop/update/start process. You can disable this in **Settings -> PocketMine version**. Set `MC_AUTO_UPDATE=false` in `.env` to disable it by environment instead.
-
-| PocketMine-MP | Minecraft Bedrock | Protocol | Notes |
-| --- | --- | --- | --- |
-| 5.51.1 | 26.60 | 2225 | Latest stable, NetherNet + RakNet |
-| 5.50.0 | 26.50 / 26.52 | 2193 | Use for the old 26.52 client |
-| 5.49.2 | 26.50 / 26.52 | 2193 | RakNet only fallback |
-| 5.44.3 | 26.30 | 1001 | Legacy upstream release |
-
-The client and server must use the same protocol. The panel detects new releases automatically, but the game and server only match when they share the same protocol.
-
-## Daily Backups
-
-Set the hour in `.env`:
-
-```dotenv
-BACKUP_HOUR=3
+```bash
+git clone https://github.com/ysr-hameed/minecraft-server.git ~/minecraft-panel
+cd ~/minecraft-panel
+bash deploy_vps.sh
 ```
 
-The panel creates one automatic backup per day at `BACKUP_HOUR`. If the panel was offline at that hour (phone asleep, process killed), the missed backup is created on the next panel start instead of silently skipped. Backups are named `backup_YYYY-MM-DD_HH-MM_#N_daily.zip` and appear on the Backups page with a type badge and a Download link. Manual backups are available on the Worlds and Backups pages. A safety backup is created automatically before every restore.
+The script installs Node.js 22, npm dependencies, the latest official Bedrock server, firewall rules and the `minecraft-panel` systemd service. It generates a random panel password on first run and prints it.
 
-## S3 / Neon Object Storage Copy
+Open in your cloud provider's security list / firewall:
 
-Every backup (daily and manual) is uploaded to S3-compatible storage. Set these in `.env`:
+| Port | Protocol | Purpose |
+| --- | --- | --- |
+| `5000` | TCP | Web panel |
+| `19132` | TCP | NetherNet signaling |
+| `19133` | UDP | NetherNet gameplay (recommended) |
+| `19132` | UDP | Optional RakNet/legacy gameplay |
+
+Then open `http://<VPS_PUBLIC_IP>:5000` and add the server in Minecraft Bedrock:
+
+```text
+Address: <VPS_PUBLIC_IP>
+Port:    19132
+```
+
+The Minecraft client must be the same version as the server. The panel installs the latest official build automatically, so keep clients updated.
+
+## Manual run
+
+```bash
+sudo apt install -y curl zip unzip
+npm install
+node scripts/install-bds.js
+cp .env.example .env
+nano .env
+node server.js
+```
+
+## Configuration (` .env`)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MC_PANEL_PASSWORD` | `admin123` | Web panel password — change it |
+| `SECRET_KEY` | generated | Session signing secret |
+| `MC_PANEL_PORT` | `5000` | Panel HTTP port |
+| `MC_SERVER_DIR` | `./bedrock_server` | Official server files and worlds |
+| `MC_BACKUP_DIR` | `./backups` | Backup archives |
+| `MC_SERVER_PORT` | `19132` | NetherNet signaling/TCP port |
+| `MC_SERVER_PORT_V6` | `19133` | Bedrock IPv6 port (ignored by NetherNet) |
+| `MC_UDP_PORTS` | empty | NetherNet gameplay UDP mapping, e.g. `203.0.113.10:19133:19133` |
+| `MC_TRANSPORT` | `nethernet` | Required by current official BDS builds |
+| `MC_AUTO_UPDATE` | `true` | Check/install newest official build |
+| `MC_AUTO_START` | `true` | Start the server with the panel |
+| `BACKUP_HOUR` | `3` | Daily backup hour (0–23) |
+
+Optional S3 copies:
 
 ```dotenv
 AWS_BUCKET_NAME=assets
-AWS_ENDPOINT_URL_S3=https://your-endpoint.storage.c-8.us-east-2.aws.neon.tech
+AWS_ENDPOINT_URL_S3=https://your-endpoint.storage.example.com
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 AWS_REGION=us-east-2
 ```
 
-Uploads go to `s3://<bucket>/minecraft-backups/<backup-name>.zip`. Backups still work locally without S3. Never commit `.env` — it is already gitignored.
+Install the optional dependency with `npm install @aws-sdk/client-s3`. Backups always work locally without it.
 
-## VPS / Oracle Cloud
+## systemd
 
-```bash
-git clone https://github.com/ysr-hameed/minecraft-server.git ~/minecraft_panel
-cd ~/minecraft_panel
-bash deploy_oracle.sh
-nano .env
-python3 app.py
-```
-
-Open these ports:
-
-- `5000/TCP` for the panel
-- `19132/UDP` for Minecraft Bedrock RakNet
-- `19132/TCP` for Bedrock 26.60 NetherNet
-- `19133/UDP` for the IPv6 listener
-
-PocketMine PHP binaries are downloaded automatically for Termux ARM64, Linux x86_64 and macOS. On Linux ARM64 there is no official PocketMine PHP build; set `MC_PHP_BINARY` to a PocketMine-compatible PHP 8.x binary if you use that platform.
-
-For a long-running VPS process, use `tmux` or `screen`:
+`deploy_vps.sh` creates `/etc/systemd/system/minecraft-panel.service`.
 
 ```bash
-tmux new -s panel
-python3 app.py
+sudo systemctl status minecraft-panel
+sudo systemctl restart minecraft-panel
+sudo journalctl -u minecraft-panel -f
 ```
 
-## Docker
+The panel manages `bedrock_server` as a child process and stops it gracefully on `SIGTERM`.
 
-Build the image with the included `Dockerfile`:
+## NetherNet on a VPS
 
-```bash
-docker build -t slyxpanel .
-docker run -d --name slyxpanel \
-  -p 5000:5000 \
-  -p 19132:19132/udp \
-  -p 19132:19132/tcp \
-  -p 19133:19133/udp \
-  -v slyx_worlds:/app/minecraft_server_bedrock \
-  -v slyx_backups:/app/backups \
-  slyxpanel
-```
-
-The image runs the panel as a non-root user, stores worlds and backups in volumes, and checks `/healthz`. PocketMine and its PHP runtime are downloaded automatically from the official release assets on first start. The panel is Bedrock only, so do not map TCP `25565` or try to use a Java client.
-
-## Project Layout
+Official Bedrock Dedicated Server **1.26.62.1 and newer only support NetherNet**. RakNet is rejected with:
 
 ```text
-app.py                          Flask routes and authentication
-mc_core.py                      PocketMine process, stats, worlds, backups, files
-templates/                      Dashboard, console, worlds, players, files, settings
-static/style.css                Full dark responsive UI
-minecraft_server_bedrock/       PocketMine-MP.phar, worlds, plugins, server.properties
-backups/                        Local backup archives
-uploads/                        Temporary uploads
-runtime/                        Downloaded PocketMine PHP runtime
-requirements.txt                Flask, requests, python-dotenv, Werkzeug
+Your current connection type is not set to NetherNet.
+In this release, NetherNet is the only supported transport type.
 ```
 
-## Useful Commands
+NetherNet works in two phases:
+
+1. The client connects to `server-port` over **TCP** for the HTTP signaling handshake.
+2. Both sides negotiate a **UDP** connection for gameplay.
+
+By default BDS lets the OS choose a random UDP port for gameplay. On a VPS the firewall does not allow that random port, so the server appears online, then the client fails with **`Door` / `InitialConnection-83`**. This panel sets:
+
+```properties
+transport=nethernet
+server-udp-ports=203.0.113.10:19133:19133
+```
+
+The `PUBLIC_IP:PUBLIC:INTERNAL` form tells the client which public UDP address to use. Set it with `MC_UDP_PORTS` in `.env` (do not use a hostname; use the public IPv4 literal). Use a gameplay UDP port that is **different from the TCP signaling port**; `19133` is the tested default here. Both `TCP 19132` and `UDP 19133` are opened by `deploy_vps.sh`. Keep these ports open in your cloud security list as well.
+
+You can verify signaling from any machine:
 
 ```bash
-# Check the panel syntax
-python -m py_compile app.py mc_core.py
-
-# Start the panel
-python app.py
-
-# Start the Bedrock server from the panel console equivalent
-cd minecraft_server_bedrock
-php PocketMine-MP.phar --no-wizard
-
-# List listening UDP sockets on Linux
-ss -lunp | grep 19132
+curl http://<VPS_PUBLIC_IP>:19132/v1/join
 ```
 
-The panel starts PocketMine with the same command: `php PocketMine-MP.phar --no-wizard`, using the selected version and its compatible PHP runtime.
+It should return the server name, protocol and version.
 
-## Notes
+## Project layout
 
-- Do not create a virtual environment inside `/storage/emulated/0/`; Android shared storage does not support the required symlinks.
-- The panel never uses `psutil`. RAM comes from `/proc/meminfo`, disk from `shutil.disk_usage`, and CPU reports `0` on Termux to avoid `/proc/stat` permission errors.
-- World and player data are runtime files and are ignored by git.
-- The panel is Bedrock only. Connect with Bedrock on UDP/TCP `19132`, not with a Java client on TCP `25565`.
-- Bedrock 26.60 server releases require the `webrtc` PHP extension for NetherNet. The panel downloads the Axolotl-PM PHP build automatically.
+```text
+server.js                 Express app, auth and routes
+src/config.js             .env configuration
+src/manager.js            Official BDS install, process, console, backups, worlds, players
+src/stats.js              CPU / RAM / disk readers
+src/s3.js                 Optional S3 backup upload
+views/                    EJS pages
+public/style.css          Panel theme
+scripts/install-bds.js    Download the latest official Bedrock server
+deploy_vps.sh             One-command VPS installer
+```
+
+## Troubleshooting
+
+- **Panel reachable, server not joinable:** confirm `UDP 19133` is open in both the Linux firewall and the cloud security list. Check the console for `Server started.` and `Accepting clients on [::]:19132`.
+- **`Door` / `InitialConnection-83`:** TCP signaling works, but the client cannot reach the gameplay UDP port. Set `MC_UDP_PORTS=<PUBLIC_IP>:19133:19133`, open UDP 19133 in the cloud firewall, and restart. Do not map gameplay UDP to the same port as TCP signaling.
+- **`Terracotta` / `InitialConnection-149`:** TCP signaling is not reachable. Confirm TCP 19132 is open and `curl http://<VPS_PUBLIC_IP>:19132/v1/join` returns JSON.
+- **Version mismatch:** press **Download / reinstall latest** in Settings, or restart the panel. It reads Mojang's official download API.
+- **A player is stuck / world not saving:** use **Stop** in the panel, never kill the process, so the official server can save.
+- **Operator changes while offline:** the panel needs the player's XUID. Let the player join once, then use **Op**.

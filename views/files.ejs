@@ -1,0 +1,97 @@
+<%- include('partials/head', { title: 'Files', active: active }) %>
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Server file manager</span>
+    <h1>Files</h1>
+    <p class="sub">Browse, edit and upload files inside <code>bedrock_server/</code> · current path <code>/<%= current %></code></p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="/files">Server root</a>
+    <% if (current) { %><a class="btn btn-ghost" href="/files?path=<%= encodeURIComponent(parent) %>">Up one level</a><% } %>
+  </div>
+</section>
+
+<article class="card">
+  <div class="card-head">
+    <div><span class="eyebrow">Directory</span><h2><%= current || 'Server root' %></h2></div>
+    <span class="badge badge-neutral"><%= items.length %> entries</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table file-table">
+      <thead><tr><th>Name</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody>
+        <% if (current) { %>
+          <tr>
+            <td colspan="3"><a class="folder-link" href="/files?path=<%= encodeURIComponent(parent) %>"><span class="file-icon">..</span><b>Parent directory</b></a></td>
+          </tr>
+        <% } %>
+        <% if (items.length) { %>
+          <% items.forEach(function (item) { %>
+            <tr>
+              <td>
+                <% if (item.is_dir) { %>
+                  <a class="folder-link" href="/files?path=<%= encodeURIComponent(item.path) %>">
+                    <span class="file-icon folder">DIR</span><b><%= item.name %></b>
+                  </a>
+                <% } else { %>
+                  <span class="folder-link static">
+                    <span class="file-icon">FILE</span><b><%= item.name %></b>
+                  </span>
+                <% } %>
+              </td>
+              <td class="mono"><%= item.is_dir ? '—' : item.size_h %></td>
+              <td>
+                <div class="action-row">
+                  <% if (item.is_dir) { %>
+                    <a class="btn btn-ghost btn-tiny" href="/files?path=<%= encodeURIComponent(item.path) %>">Open</a>
+                  <% } else { %>
+                    <a class="btn btn-ghost btn-tiny" href="/files?path=<%= encodeURIComponent(current) %>&edit=<%= encodeURIComponent(item.path) %>">Edit</a>
+                    <a class="btn btn-ghost btn-tiny" href="/files/download?path=<%= encodeURIComponent(item.path) %>">Download</a>
+                  <% } %>
+                  <form method="POST" action="/files/delete" onsubmit="return confirm('Delete this file or folder? This cannot be undone.');">
+                    <input type="hidden" name="path" value="<%= item.path %>">
+                    <button class="btn btn-red btn-tiny" type="submit">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="3"><div class="empty">This folder is empty.</div></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<% if (editPath) { %>
+  <article class="card editor-card">
+    <div class="card-head">
+      <div><span class="eyebrow">Editor</span><h2 class="mono"><%= editPath %></h2></div>
+      <span class="badge badge-neutral">TEXT</span>
+    </div>
+    <form method="POST" action="/files/save">
+      <input type="hidden" name="path" value="<%= editPath %>">
+      <textarea class="code-editor" name="content" spellcheck="false"><%= content %></textarea>
+      <div class="action-row editor-actions">
+        <button class="btn btn-green" type="submit">Save file</button>
+        <a class="btn btn-ghost" href="/files?path=<%= encodeURIComponent(current) %>">Cancel</a>
+      </div>
+    </form>
+  </article>
+<% } %>
+
+<article class="card">
+  <div class="card-head">
+    <div><span class="eyebrow">Upload</span><h2>Add a file to this folder</h2></div>
+  </div>
+  <form method="POST" action="/files/upload" enctype="multipart/form-data" class="form-grid two-fields">
+    <input type="hidden" name="path" value="<%= current %>">
+    <label>File
+      <input class="input" type="file" name="file" required>
+    </label>
+    <button class="btn btn-green" type="submit">Upload file</button>
+  </form>
+  <p class="sub">Temporary upload files are removed after the operation. Binary files can be uploaded and downloaded but not edited in the text editor.</p>
+</article>
+<%- include('partials/foot') %>

@@ -1,0 +1,149 @@
+<%- include('partials/head', { title: 'Settings', active: active }) %>
+<section class="page-head">
+  <div>
+    <span class="eyebrow">Bedrock configuration</span>
+    <h1>Server settings</h1>
+    <p class="sub">Edits <code>bedrock_server/server.properties</code>. Restart the server after saving.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="/console">Console</a>
+    <a class="btn btn-ghost" href="/files">File manager</a>
+  </div>
+</section>
+
+<section class="settings-layout">
+  <form method="POST" action="/settings" class="stack">
+    <% fieldGroups.forEach(function (group) { %>
+      <article class="card">
+        <div class="card-head">
+          <div><span class="eyebrow"><%= group.name %></span><h2><%= group.name %> settings</h2></div>
+        </div>
+        <div class="settings-grid">
+          <% group.fields.forEach(function (field) { const key = field[0]; const label = field[1]; const kind = field[2]; const value = props[key] === undefined ? '' : String(props[key]); const lower = value.toLowerCase(); %>
+            <label class="field" for="prop__<%= key %>">
+              <span><%= label %></span>
+              <% if (kind === 'bool') { %>
+                <select class="select" id="prop__<%= key %>" name="prop__<%= key %>">
+                  <option value="true" <%= ['true','on','1','yes'].includes(lower) ? 'selected' : '' %>>Enabled</option>
+                  <option value="false" <%= !['true','on','1','yes'].includes(lower) ? 'selected' : '' %>>Disabled</option>
+                </select>
+              <% } else if (kind === 'gamemode') { %>
+                <select class="select" id="prop__<%= key %>" name="prop__<%= key %>">
+                  <% ['survival','creative','adventure','spectator'].forEach(function (option) { %>
+                    <option value="<%= option %>" <%= lower === option ? 'selected' : '' %>><%= option.charAt(0).toUpperCase() + option.slice(1) %></option>
+                  <% }); %>
+                </select>
+              <% } else if (kind === 'difficulty') { %>
+                <select class="select" id="prop__<%= key %>" name="prop__<%= key %>">
+                  <% ['peaceful','easy','normal','hard'].forEach(function (option) { %>
+                    <option value="<%= option %>" <%= lower === option ? 'selected' : '' %>><%= option.charAt(0).toUpperCase() + option.slice(1) %></option>
+                  <% }); %>
+                </select>
+              <% } else if (kind === 'permission') { %>
+                <select class="select" id="prop__<%= key %>" name="prop__<%= key %>">
+                  <% ['visitor','member','operator'].forEach(function (option) { %>
+                    <option value="<%= option %>" <%= lower === option ? 'selected' : '' %>><%= option.charAt(0).toUpperCase() + option.slice(1) %></option>
+                  <% }); %>
+                </select>
+              <% } else if (kind === 'transport') { %>
+                <select class="select" id="prop__<%= key %>" name="prop__<%= key %>">
+                  <option value="raknet" <%= lower !== 'nethernet' ? 'selected' : '' %>>RakNet (older builds only)</option>
+                  <option value="nethernet" <%= lower === 'nethernet' ? 'selected' : '' %>>NetherNet (required by current BDS)</option>
+                </select>
+              <% } else if (kind === 'number') { %>
+                <input class="input" id="prop__<%= key %>" type="number" name="prop__<%= key %>" value="<%= value %>">
+              <% } else { %>
+                <input class="input" id="prop__<%= key %>" type="text" name="prop__<%= key %>" value="<%= value %>">
+              <% } %>
+            </label>
+          <% }); %>
+        </div>
+      </article>
+    <% }); %>
+
+    <article class="card">
+      <div class="card-head">
+        <div><span class="eyebrow">Advanced</span><h2>Other server.properties values</h2></div>
+      </div>
+      <div class="settings-grid">
+        <% const extraKeys = Object.keys(extraProperties); %>
+        <% if (extraKeys.length) { %>
+          <% extraKeys.forEach(function (key) { %>
+            <label class="field" for="prop__<%= key %>">
+              <span><%= key %></span>
+              <input class="input" id="prop__<%= key %>" type="text" name="prop__<%= key %>" value="<%= extraProperties[key] %>">
+            </label>
+          <% }); %>
+        <% } else { %>
+          <p class="sub">No extra properties.</p>
+        <% } %>
+      </div>
+    </article>
+
+    <div class="sticky-actions">
+      <span class="sub">Changes apply after restarting the Bedrock server.</span>
+      <button class="btn btn-green" type="submit">Save settings</button>
+    </div>
+  </form>
+
+  <aside class="stack">
+    <article class="card">
+      <span class="eyebrow">Minecraft compatibility</span>
+      <h2>Bedrock version</h2>
+      <p class="sub" style="margin-bottom:12px">Installed <b><%= runtime.installed_version %></b> · latest official <b><%= runtime.latest_version %></b></p>
+      <form method="POST" action="/server/version" class="version-form">
+        <label>Official release
+          <select class="select" name="version">
+            <% versions.forEach(function (item) { %>
+              <option value="<%= item.version %>" <%= item.selected ? 'selected' : '' %>>
+                <%= item.version %> — <%= item.label %><%= item.url ? '' : ' (installed only)' %>
+              </option>
+            <% }); %>
+          </select>
+        </label>
+        <button class="btn btn-violet btn-block" type="submit">Download and switch</button>
+      </form>
+      <form method="POST" action="/server/auto-update" class="auto-version-form">
+        <label class="check-row">
+          <input type="checkbox" name="enabled" <%= autoUpdate ? 'checked' : '' %>>
+          Automatically install the newest official build when the server is idle
+        </label>
+        <button class="btn btn-ghost btn-tiny" type="submit">Save auto-update</button>
+      </form>
+      <p class="sub" style="margin-top:10px">The version list comes directly from Mojang's official download API, so it always matches the current Minecraft client.</p>
+      <p class="sub" style="margin-top:6px">If the server is running it stops safely, updates the server files while keeping worlds and configuration, and starts again.</p>
+    </article>
+
+    <article class="card">
+      <span class="eyebrow">Runtime</span>
+      <h2>Server health</h2>
+      <dl class="info-list compact">
+        <div><dt>Platform</dt><dd><%= runtime.platform %></dd></div>
+        <div><dt>Server folder</dt><dd class="mono"><%= runtime.server_dir %></dd></div>
+        <div><dt>Installed build</dt><dd><%= runtime.installed_version %></dd></div>
+        <div><dt>Binary size</dt><dd><%= runtime.binary_size %></dd></div>
+        <div><dt>Transport</dt><dd><%= runtime.transport %></dd></div>
+        <div><dt>Binary status</dt><dd><span class="badge <%= runtime.binary ? 'badge-green' : 'badge-amber' %>"><%= runtime.binary ? 'READY' : 'DOWNLOAD ON START' %></span></dd></div>
+      </dl>
+      <% if (runtime.error) { %><p class="sub">Version check error: <%= runtime.error %></p><% } %>
+      <form method="POST" action="/server/install">
+        <button class="btn btn-ghost btn-small btn-block" type="submit">Download / reinstall latest official build</button>
+      </form>
+      <p class="sub" style="margin-top:10px">The Bedrock Dedicated Server binary and packs are downloaded from <code>minecraft.net</code>. Worlds and configuration are preserved during updates.</p>
+    </article>
+
+    <article class="card muted-card">
+      <span class="eyebrow">Connection</span>
+      <h2>Bedrock defaults</h2>
+      <div class="safe-list">
+        <span>TCP <code><%= props['server-port'] || '19132' %></code> for NetherNet signaling</span>
+        <span>UDP <code><%= (props['server-udp-ports'] || props['server-port'] || '19132').split(':').pop() %></code> for gameplay</span>
+        <span>Transport <code><%= props.transport || 'raknet' %></code></span>
+        <span>Max players <code><%= props['max-players'] || '20' %></code></span>
+        <span>Allow list <code><%= props['allow-list'] || 'false' %></code></span>
+      </div>
+      <p class="sub">Open both TCP and UDP on the Bedrock port in your VPS firewall and cloud security list. NetherNet is required by current official builds.</p>
+    </article>
+  </aside>
+</section>
+<%- include('partials/foot') %>
